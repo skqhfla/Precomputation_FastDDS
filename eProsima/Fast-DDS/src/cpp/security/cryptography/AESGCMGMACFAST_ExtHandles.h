@@ -25,7 +25,7 @@ namespace security {
 constexpr size_t BUFFER_SIZE = KEYSTREAM_SIZE * MAX_COUNTER_BLOCK_SIZE;
 
 struct CircularBuffer{
-    unsigned char keystreams[KEYSTREAM_SIZE * MAX_COUNTER_BLOCK_SIZE][AES_GCM_BLOCK_SIZE];
+    unsigned char keystreams[BUFFER_SIZE][AES_GCM_BLOCK_SIZE];
     std::atomic<int> head;
     std::atomic<int> tail;
     std::atomic<bool> stop_round;
@@ -34,7 +34,7 @@ struct CircularBuffer{
     std::ofstream log;
     std::ofstream log_key;
 
-    CircularBuffer(uint32_t session_id, bool type) : head(0), tail(0), stop_round(false), last(MAX_COUNTER_BLOCK_SIZE) {
+    CircularBuffer(uint32_t session_id, bool type) : head(0), tail(0), stop_round(false), last(MAX_ROUND_SIZE) {
         session.store(session_id, std::memory_order_release);
 /*
         auto now = std::chrono::system_clock::now();
@@ -47,8 +47,7 @@ struct CircularBuffer{
 
         std::string filename_key = "/home/user/" + t + "_keystream_" + std::to_string(session_id) + "_" + std::to_string(millis) + ".log";
         log_key.open(filename_key, std::ios::app);
-*/
-
+*/        
     }
 
     size_t remain_size() const
@@ -75,22 +74,34 @@ struct CircularBuffer{
     bool push(EVP_CIPHER_CTX* ctx)
     {
 
+//        auto start = std::chrono::steady_clock::now();
         int block_cnt;
         uint32_t session_id = session.load(std::memory_order_acquire);
-//        fprintf(stdout, "session start\n", session_id);
+  //     fprintf(stdout, "session start\n", session_id);
 
         //max_blocks_per_session
-        for(int round = 0; round < MAX_COUNTER_BLOCK_SIZE; round++){
+        for(int round = 0; round < MAX_ROUND_SIZE; round++){
 
-  //          log << "==" << session_id << "  ROUND " << round << " start ==" << std::endl;
-//            fprintf(stdout, "[%u] ROUND %d start\n", session_id, round);
+   //         log << "==" << session_id << "  ROUND " << round << " start ==" << std::endl;
+  //          fprintf(stdout, "[%u] ROUND %d start\n", session_id, round);
 
 
             //max iv counter
             for(size_t i = 0; i < KEYSTREAM_SIZE; i += CHUNK_SIZE){
-
+/*
+                auto end = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+                if(elapsed > std::chrono::milliseconds(50)){
+                std::cout << "[LOG] 50ms 경과: 함수 실행 후 " 
+                                  << std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                               std::chrono::steady_clock::now() - start
+                                                                                ).count()
+                                                << "ms 지남\n";
+                return true;
+                }
+                */
                 if(stop_round.load(std::memory_order_acquire)){
-   //                 log << "[" << round << " ROUND ] aborted due to overrun" << std::endl; 
+    //                log << "[" << round << " ROUND ] aborted due to overrun" << std::endl; 
 
                     int h = head.load(std::memory_order_acquire);
                     int t = tail.load(std::memory_order_acquire);
@@ -98,18 +109,18 @@ struct CircularBuffer{
                     add_gctx_ctr(ctx, h - t);
                     
                     tail.store(h, std::memory_order_release);
-    //                log << "Tail adjusted to head (" << h << ")" << std::endl;
+      //              log << "Tail adjusted to head (" << h << ")" << std::endl;
                     stop_round.store(false, std::memory_order_release);
                     break;
                 }
 
                 int h = head.load(std::memory_order_acquire);
                 int t = tail.load(std::memory_order_acquire);
-    //            log << "[" << round << "] remain buffer size = " << remain_size() << " | head : " << h << " | tail : " << t << std::endl;
+//                std::cout << "[" << round << "] remain buffer size = " << remain_size() << " | head : " << h << " | tail : " << t << std::endl;
 
                 while(remain_size() <= CHUNK_SIZE){
-      //              log << "[" << session_id << "] wait for make keystream | i = " << i << std::endl;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_INTERVAL));
+  //                  log << "[" << session_id << "] wait for make keystream | i = " << i << std::endl;
+                    std::this_thread::sleep_for(std::chrono::nanoseconds(WAIT_INTERVAL));
                 }
 
                 int cur_tail = t;
@@ -142,35 +153,36 @@ struct CircularBuffer{
         int t = tail.load(std::memory_order_acquire);
         int new_head = (h + shift) % BUFFER_SIZE;
 
- //       log << "==== h : " << h << " | new_head : " << new_head << " | tail : " << t << std::endl;   
- //       log << "--- remain_size : " << BUFFER_SIZE - remain_size() << " | shift " << shift << " --- " << std::endl;
+//        log << "==== h : " << h << " | new_head : " << new_head << " | tail : " << t << std::endl;   
+//        log << "--- remain_size : " << BUFFER_SIZE - remain_size() << " | shift " << shift << " --- " << std::endl;
 
         while(stop_round.load()){
-            std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_INTERVAL));
+            std::this_thread::sleep_for(std::chrono::nanoseconds(WAIT_INTERVAL));
 //            log << "*** move head wait moving tail head : " << h << " | tail : " << tail << " ***" << std::endl;
         }
 
         if(BUFFER_SIZE - remain_size() < shift){
-  //          log << "[Trigger] Overrun detected! Stop current round" << std::endl;
+//            log << "[Trigger] Overrun detected! Stop current round" << std::endl;
             stop_round.store(true, std::memory_order_release);
         }
-        /*
+        
         while(BUFFER_SIZE - remain_size() < shift){
-            log << "*** move head wait moving tail head : " << h << " / tail : " << tail << " ***" << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_INTERVAL));
+//            log << "*** move head wait moving tail head : " << h << " / tail : " << tail << " ***" << std::endl;
+            std::this_thread::sleep_for(std::chrono::nanoseconds(WAIT_INTERVAL));
         }
-*/
+
         head.store(new_head, std::memory_order_release);
 
- //       log << "Keystream sync adjusted: head=" << new_head
- //                 << " (shift=" << shift << ")" << std::endl;
+//        log << "Keystream sync adjusted: head=" << new_head
+//                  << " (shift=" << shift << ")" << std::endl;
+                  
     }
 
     unsigned char * get_keystream(int len, int block_cnt, EVP_CIPHER_CTX * ctx)
     {
         uint32_t session_id = session.load(std::memory_order_acquire);
-//        log << "--- get_keystream : " << session_id << " | size : " << len << " | bcnt = " << block_cnt << "  ---" << std::endl;
-//        fprintf(stdout, "[%u] get keystream size : %d | bnt = %d\n", session_id, len, block_cnt);
+  //      log << "--- get_keystream : " << session_id << " | size : " << len << " | bcnt = " << block_cnt << "  ---" << std::endl;
+  //      fprintf(stdout, "[%u] get keystream size : %d | bnt = %d\n", session_id, len, block_cnt);
 
         int blocks_needed = (len + AES_GCM_BLOCK_SIZE - 1) / AES_GCM_BLOCK_SIZE;
         unsigned char *buf = (unsigned char (*))malloc(blocks_needed * AES_GCM_BLOCK_SIZE);
@@ -181,10 +193,10 @@ struct CircularBuffer{
         int res = blocks_needed;
         int h, t;
         int l = last.load(std::memory_order_acquire);
-        int diff = block_cnt - l;
+        int diff = (l != MAX_ROUND_SIZE) ? block_cnt - l : block_cnt - 0;
 
         if(diff){
-  //          log << "sync " << l << " to " << block_cnt << " | move block " << diff << std::endl;
+ //           log << "sync " << l << " to " << block_cnt << " | move block " << diff << std::endl;
             int shift = diff * KEYSTREAM_SIZE;
 
             move_head(shift);
@@ -199,7 +211,7 @@ struct CircularBuffer{
                 int item_len = (h <= t) ? (t - h) : (BUFFER_SIZE - h + t);
                 if(item_len <= 0) continue;
 
-  //              log << "item_len : " << item_len << std::endl;
+ //               log << "item_len : " << item_len << std::endl;
 
                 int cnt = (item_len < res) ? item_len : res;
 
@@ -212,28 +224,29 @@ struct CircularBuffer{
                             AES_GCM_BLOCK_SIZE * (cnt - first_part));
                 }
 
+//                log << "[get] move head to " << (h + cnt) % BUFFER_SIZE << std::endl;
                 head.store((h + cnt) % BUFFER_SIZE, std::memory_order_release);
                 res -= cnt;
                 out_ptr += (cnt * AES_GCM_BLOCK_SIZE);
             }
 
-  //      log << "out while" << std::endl;
+//        log << "out while" << std::endl;
 
         move_head((KEYSTREAM_SIZE - blocks_needed));
         
-        if(2 * block_cnt - l >= MAX_COUNTER_BLOCK_SIZE){
-    //        log << "========== last set 32 for reset ==========\n";
-    //        fprintf(stdout, "========== last set 32 for reset ==========\n");
-            last.store(MAX_COUNTER_BLOCK_SIZE, std::memory_order_release);
+        if(2 * block_cnt - l >= MAX_ROUND_SIZE){
+//            log << "========== last set 32 for reset ==========\n";
+//            fprintf(stdout, "========== last set 32 for reset ==========\n");
+            last.store(MAX_ROUND_SIZE, std::memory_order_release);
         }
         else{
-    //        log << "========== last set " << block_cnt + 1 << " ==========\n";
-    //        fprintf(stdout, "========== last set %d ==========\n", block_cnt + 1);
+//            log << "========== last set " << block_cnt + 1 << " ==========\n";
+//            fprintf(stdout, "========== last set %d ==========\n", block_cnt + 1);
         
             last.store(block_cnt + 1, std::memory_order_release);
          }
 /*
-        log << "head : " << head.load(std::memory_order_acquire) << std::endl;
+       log << "head : " << head.load(std::memory_order_acquire) << std::endl;
         log << "tail : " << tail.load(std::memory_order_acquire) << std::endl;
         log << "block count : " << block_cnt << " | get keystream : ";
 
@@ -256,11 +269,12 @@ struct AESGCMGMACFAST_WriterCryptoHandleImpl
     std::shared_ptr<CircularBuffer> e_buffer;
     EVP_CIPHER_CTX* e_ctx = nullptr;
     uint32_t e_session = 0;
+    std::array<uint8_t, 32> e_key{};
 
     std::shared_ptr<CircularBuffer> d_buffer;
     EVP_CIPHER_CTX* d_ctx = nullptr;
     uint32_t d_session = 0;
-    std::array<uint8_t, 32> key{};
+    std::array<uint8_t, 32> d_key{};
 
     static AESGCMGMACFAST_WriterCryptoHandleImpl& narrow(DatawriterCryptoHandle& handle)
     {

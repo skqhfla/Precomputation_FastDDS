@@ -13,12 +13,10 @@
 // limitations under the License.
 
 /*!
- * @file AESGCMGMACFAST_Transform.cpp
+ * @file AESGCMGMAC_Transform.cpp
  */
 
-#include <security/cryptography/AESGCMGMACFAST_Transform.h>
-#include <security/cryptography/AESGCMGMACFAST_ExtHandles.h>
-#include <security/cryptography/AESGCMGMACFAST_Types.h>
+#include <security/cryptography/AESGCMGMAC_Transform.h>
 
 #include <fastdds/dds/log/Log.hpp>
 #include <fastdds/rtps/messages/CDRMessage.h>
@@ -72,45 +70,6 @@ void debug_print(const std::string& LOG_FILE, const std::string& type, const T& 
     }
 }
 
-std::string to_hex_string(uint32_t value)
-{
-    std::ostringstream oss;
-    oss << std::hex << std::setw(8) << std::setfill('0') << value;
-    return oss.str();
-}
-
-template <size_t N>
-std::string to_hex_string(const std::array<unsigned char, N>& arr)
-{
-    std::ostringstream oss;
-
-    for(unsigned char c : arr){
-        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(c);
-    }
-    return oss.str();
-}
-
-bool AESGCMGMACFAST_Transform::is_vaild_gcm_kind(const CryptoTransformKind& transformation_kind){
-    if(transformation_kind == c_transfrom_kind_aes256_gcm || transformation_kind == c_transfrom_kind_aes128_gcm)
-        return true;
-    else
-        return false;
-}
-
-std::array<uint8_t, 8> 
-AESGCMGMACFAST_Transform::build_iv_suffix(const eprosima::fastrtps::rtps::security::KeySessionData* session)
-{
-    std::array<uint8_t, initialization_vector_suffix_length> iv_suffix{};
-
-    uint32_t submessage_value = session->session_block_counter;
-    uint32_t payload_value = session->payload_block_counter - 1;
-
-    memcpy(iv_suffix.data(), &submessage_value, sizeof(submessage_value));
-    memcpy(iv_suffix.data() + 4, &payload_value, sizeof(payload_value));
-
-    return iv_suffix;
-}
-
 static KeyMaterial_AES_GCM_GMAC* find_key(
         KeyMaterial_AES_GCM_GMAC_Seq& keys,
         const CryptoTransformIdentifier& id)
@@ -130,116 +89,22 @@ static KeyMaterial_AES_GCM_GMAC* find_key(
     return nullptr;
 }
 
-
-void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_WriterCryptoHandleImpl& handle,
-                            eprosima::fastrtps::rtps::security::KeySessionData& session)
-{
-    //fprintf(stdout, "[%u] set for Encode precomputation\n", session.session_id);
-    while(handle.e_buffer && handle.e_buffer->get_last() != MAX_ROUND_SIZE){
-        std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_INTERVAL));
-    }
-    handle.e_buffer.reset();
-    //fprintf(stdout, "[%u] Encode free ctx & buffer\n", session.session_id);
-
-    //fprintf(stdout, "[%u] Encode handle session\n", handle.e_session);
-    memcpy(&(handle.e_session), &(session.session_id), sizeof(session.session_id));
-    memcpy(&(handle.e_key), &(session.SessionKey), sizeof(session.SessionKey));
-
-    auto ring_buffer = std::make_shared<CircularBuffer>(session.session_id, true);
-    ring_buffer->set_last(0);
-    handle.e_buffer = ring_buffer;
-    handle.e_ctx = EVP_CIPHER_CTX_new();
-    if(!handle.e_ctx){
-      //  fprintf(stderr, "Failed to create OpenSSL context in datawriter\n");
-        exit(EXIT_FAILURE);
-    }
-
-    std::array<uint8_t, 12> iv;
-    uint32_t sid = session.session_id;
-    memcpy(iv.data(), &sid, sizeof(sid));
-    memset(iv.data() + 4, 0, 8);
-/*
-    fprintf(stdout, "IV : ");
-    for (int i = 0; i < 12; i++)
-        fprintf(stdout, "%02x ", iv[i]);
-    fprintf(stdout, "\n");
-*/
-    if(!jinho_EVP_EncryptInit_ex(handle.e_ctx, EVP_aes_256_gcm(), NULL, session.SessionKey.data(), iv.data()))
-    {
-  //      fprintf(stderr, "Failed to init AES-GCM with IV\n");
-        exit(EXIT_FAILURE);
-    }
-
-    std::thread([ring_buffer, ctx = handle.e_ctx, sid](){
-    //    fprintf(stdout, "[%u] make thread for make keystream\n", sid);
-        ring_buffer->push(ctx);
-    }).detach();
-}
-
-
-void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_WriterCryptoHandleImpl& handle,
-                            std::array<uint8_t, 32> sessionKey, int sessionId)
-{
-    //fprintf(stdout, "[%u] set for Decode writer precomputation\n", sessionId);
-    while(handle.d_buffer && handle.d_buffer->get_last() != MAX_ROUND_SIZE){
-        std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_INTERVAL));
-    } 
-    handle.d_buffer.reset();
-   // fprintf(stdout, "[%u] Decode writer free ctx & buffer\n", sessionId);
-
-    //fprintf(stdout, "[%u] Decode handle session\n", handle.d_session);
-    handle.d_session = sessionId;
-    memcpy(&handle.d_session, &sessionId, sizeof(sessionId));
-    memcpy(&handle.d_key, &sessionKey, sizeof(sessionKey));
-
-    auto ring_buffer = std::make_shared<CircularBuffer>(sessionId, false);
-    ring_buffer->set_last(0);
-    handle.d_buffer = ring_buffer;
-    handle.d_ctx = EVP_CIPHER_CTX_new();
-    if(!handle.d_ctx){
-      //  fprintf(stderr, "Failed to create OpenSSL context in datawriter\n");
-        exit(EXIT_FAILURE);
-    }
-
-    std::array<uint8_t, 12> iv;
-    memcpy(iv.data(), &sessionId, sizeof(sessionId));
-    memset(iv.data() + 4, 0, 8);
-/*
-    fprintf(stdout, "IV : ");
-    for (int i = 0; i < 12; i++)
-        fprintf(stdout, "%02x ", iv[i]);
-    fprintf(stdout, "\n");
-*/
-    if(!jinho_EVP_DecryptInit_ex(handle.d_ctx, EVP_aes_256_gcm(), NULL, sessionKey.data(), iv.data()))
-    {
-  //      fprintf(stderr, "Failed to init AES-GCM with IV\n");
-        exit(EXIT_FAILURE);
-    }
-
-    std::thread([ring_buffer, ctx = handle.d_ctx, sessionId](){
-    //    fprintf(stdout, "[%u] make thread for make keystream\n", sessionId);
-        ring_buffer->push(ctx);
-    }).detach();
-}
-
-AESGCMGMACFAST_Transform::AESGCMGMACFAST_Transform()
+AESGCMGMAC_Transform::AESGCMGMAC_Transform()
 {
 }
 
-AESGCMGMACFAST_Transform::~AESGCMGMACFAST_Transform()
+AESGCMGMAC_Transform::~AESGCMGMAC_Transform()
 {
 }
 
-bool AESGCMGMACFAST_Transform::encode_serialized_payload(
+bool AESGCMGMAC_Transform::encode_serialized_payload(
         SerializedPayload_t& output_payload,
         std::vector<uint8_t>& /*extra_inline_qos*/,
         const SerializedPayload_t& payload,
         DatawriterCryptoHandle& sending_datawriter_crypto,
         SecurityException& /*exception*/)
 {
-    auto& impl_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow(sending_datawriter_crypto);
-    auto& local_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow_base(sending_datawriter_crypto);
-
+    AESGCMGMAC_WriterCryptoHandle& local_writer = AESGCMGMAC_WriterCryptoHandle::narrow(sending_datawriter_crypto);
     if (local_writer.nil())
     {
         logWarning(SECURITY_CRYPTO, "Invalid CryptoHandle");
@@ -263,7 +128,6 @@ bool AESGCMGMACFAST_Transform::encode_serialized_payload(
     auto& keyMat = local_writer->EntityKeyMaterial.at(nKeys - 1);
     auto session = &local_writer->Sessions[nKeys - 1];
 
-
     //If the maximum number of blocks have been processed, generate a new SessionKey
     if (session->session_block_counter >= local_writer->max_blocks_per_session)
     {
@@ -273,40 +137,27 @@ bool AESGCMGMACFAST_Transform::encode_serialized_payload(
 
         //ReceiverSpecific keys shall be computed specifically when needed
         session->session_block_counter = 0;
-        session->payload_block_counter = 0;
-
-        //if(-1 > session->session_id || session->session_id > 20){
-       // if(guid == 2147483651){
-      //      fprintf(stdout, "Encode Writer Precomputation [Session %u]\n", session->session_id);
-        if(payload.length != 448 && payload.length != 444) 
-            set_for_writer_precomputation(impl_writer, *session);
-       // }
     }
-
-    if(payload.length != 448 && payload.length != 444 &&!impl_writer.e_buffer) 
-        set_for_writer_precomputation(impl_writer, *session);
-    //In any case, increment session block counte0r
+    //In any case, increment session block counter
     session->session_block_counter += 1;
-    session->payload_block_counter += 1;
 
-    auto iv_suffix = build_iv_suffix(session);
 
+    //Build NONCE elements (Build once, use once)
+    std::array<uint8_t, initialization_vector_suffix_length> initialization_vector_suffix;  //iv suffix changes with every operation
+
+    RAND_bytes(initialization_vector_suffix.data(), initialization_vector_suffix_length);
     std::array<uint8_t, 12> initialization_vector; //96 bytes, session_id + suffix
     memcpy(initialization_vector.data(), &(session->session_id), 4);
-    memcpy(initialization_vector.data() + 4, iv_suffix.data(), 8);
+    memcpy(initialization_vector.data() + 4, initialization_vector_suffix.data(), initialization_vector_suffix_length);
     std::array<uint8_t, 4> session_id;
     memcpy(session_id.data(), &(session->session_id), 4);
-/*
-    fprintf(stdout, "[ID = %u | bcnt = ", session->session_id);
-    for(auto byte : iv_suffix)
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << " ";
-    fprintf(stdout, "] encode serialized payload\n");
-*/
+
+
     //Header
     try
     {
         serialize_SecureDataHeader(serializer, keyMat.transformation_kind,
-                keyMat.sender_key_id, session_id, iv_suffix);
+                keyMat.sender_key_id, session_id, initialization_vector_suffix);
     }
     catch (eprosima::fastcdr::exception::Exception&)
     {
@@ -319,22 +170,11 @@ bool AESGCMGMACFAST_Transform::encode_serialized_payload(
     // Body
     try
     {
-        if(impl_writer.e_buffer){
-            if (!serialize_SecureDataBody_precomputation(serializer, keyMat.transformation_kind, 
-                    //session->SessionKey, initialization_vector, 
-                    output_buffer, impl_writer.e_buffer, impl_writer.e_ctx,
-                    session->payload_block_counter - 1, payload.data, payload.length, tag, false))
-            {
-                return false;
-            }
-        }
-        else{
-            if (!serialize_SecureDataBody(serializer, keyMat.transformation_kind, session->SessionKey, 
+        if (!serialize_SecureDataBody(serializer, keyMat.transformation_kind, session->SessionKey,
                     initialization_vector, output_buffer, payload.data, payload.length, tag, false))
-            {
-                return false;
-            }
-        } 
+        {
+            return false;
+        }
     }
     catch (eprosima::fastcdr::exception::Exception&)
     {
@@ -363,15 +203,14 @@ bool AESGCMGMACFAST_Transform::encode_serialized_payload(
     return true;
 }
 
-bool AESGCMGMACFAST_Transform::encode_datawriter_submessage(
+bool AESGCMGMAC_Transform::encode_datawriter_submessage(
         CDRMessage_t& encoded_rtps_submessage,
         const CDRMessage_t& plain_rtps_submessage,
         DatawriterCryptoHandle& sending_datawriter_crypto,
         std::vector<std::shared_ptr<DatareaderCryptoHandle>>& receiving_datareader_crypto_list,
         SecurityException& /*exception*/)
 {
-    auto& impl_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow(sending_datawriter_crypto);
-    auto& local_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow_base(sending_datawriter_crypto);
+    AESGCMGMAC_WriterCryptoHandle& local_writer = AESGCMGMAC_WriterCryptoHandle::narrow(sending_datawriter_crypto);
 
     if (local_writer.nil())
     {
@@ -392,12 +231,10 @@ bool AESGCMGMACFAST_Transform::encode_datawriter_submessage(
 
     std::unique_lock<std::mutex> lock(local_writer->mutex_);
 
-    // Submessage is always protected by the first keyOD
+    // Submessage is always protected by the first key
     auto& keyMat = local_writer->EntityKeyMaterial.at(0);
     auto session = &local_writer->Sessions[0];
 
-
-//    bool do_encryption = is_vaild_gcm_kind(keyMat.transformation_kind);
     bool update_specific_keys = false;
     //If the maximum number of blocks have been processed, generate a new SessionKey
     if (session->session_block_counter >= local_writer->max_blocks_per_session)
@@ -408,30 +245,20 @@ bool AESGCMGMACFAST_Transform::encode_datawriter_submessage(
 
         //ReceiverSpecific keys shall be computed specifically when needed
         session->session_block_counter = 0;
-        session->payload_block_counter = 0;
-        //if(-1 > session->session_id || session->session_id > 20){
-       /* if(guid == 2147483651){
-            fprintf(stdout, "Encode Writer Precomputation [Session %u]\n", session->session_id);
-            set_for_writer_precomputation(impl_writer, *session);
-        }*/
     }
 
     session->session_block_counter += 1;
 
+    //Build remaining NONCE elements
+    std::array<uint8_t, initialization_vector_suffix_length> initialization_vector_suffix;  //iv suffix changes with every operation
 
-    auto iv_suffix = build_iv_suffix(session);
-
+    RAND_bytes(initialization_vector_suffix.data(), initialization_vector_suffix_length);
     std::array<uint8_t, 12> initialization_vector; //96 bytes, session_id + suffix
     memcpy(initialization_vector.data(), &(session->session_id), 4);
-    memcpy(initialization_vector.data() + 4, iv_suffix.data(), 8);
+    memcpy(initialization_vector.data() + 4, initialization_vector_suffix.data(), 8);
     std::array<uint8_t, 4> session_id;
     memcpy(session_id.data(), &(session->session_id), 4);
-/*
-    fprintf(stdout, "[ID = %u | bcnt = ", session->session_id);
-    for(auto byte : iv_suffix)
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << " ";
-    fprintf(stdout, "] encode datawriter submessage\n");
-*/
+
 #if FASTDDS_IS_BIG_ENDIAN_TARGET
     octet flags = 0x0;
     serializer.changeEndianness(eprosima::fastcdr::Cdr::Endianness::BIG_ENDIANNESS);
@@ -451,7 +278,7 @@ bool AESGCMGMACFAST_Transform::encode_datawriter_submessage(
         const char* length_position = serializer.getCurrentPosition();
 
         serialize_SecureDataHeader(serializer, keyMat.transformation_kind,
-                keyMat.sender_key_id, session_id, iv_suffix);
+                keyMat.sender_key_id, session_id, initialization_vector_suffix);
 
         eprosima::fastcdr::Cdr::state current_state = serializer.getState();
         //TODO(Ricardo) fastcdr functinality: length substracting two Cdr::state.
@@ -471,13 +298,12 @@ bool AESGCMGMACFAST_Transform::encode_datawriter_submessage(
     // Body
     try
     {
-            if (!serialize_SecureDataBody(serializer, keyMat.transformation_kind, session->SessionKey,
-                    initialization_vector, output_buffer,
-                    &plain_rtps_submessage.buffer[plain_rtps_submessage.pos], 
+        if (!serialize_SecureDataBody(serializer, keyMat.transformation_kind, session->SessionKey,
+                    initialization_vector, output_buffer, &plain_rtps_submessage.buffer[plain_rtps_submessage.pos],
                     plain_rtps_submessage.length - plain_rtps_submessage.pos, tag, true))
-            {
-                return false;
-            }
+        {
+            return false;
+        }
     }
     catch (eprosima::fastcdr::exception::Exception&)
     {
@@ -488,7 +314,7 @@ bool AESGCMGMACFAST_Transform::encode_datawriter_submessage(
     // Tag
     try
     {
-        serializer << SEC_POSTFIX << flags;                               
+        serializer << SEC_POSTFIX << flags;
         eprosima::fastcdr::Cdr::state length_state = serializer.getState();
         uint16_t length = 0;
         serializer << length;
@@ -520,14 +346,14 @@ bool AESGCMGMACFAST_Transform::encode_datawriter_submessage(
     return true;
 }
 
-bool AESGCMGMACFAST_Transform::encode_datareader_submessage(
+bool AESGCMGMAC_Transform::encode_datareader_submessage(
         CDRMessage_t& encoded_rtps_submessage,
         const CDRMessage_t& plain_rtps_submessage,
         DatareaderCryptoHandle& sending_datareader_crypto,
         std::vector<std::shared_ptr<DatawriterCryptoHandle>>& receiving_datawriter_crypto_list,
         SecurityException& /*exception*/)
 {
-    AESGCMGMACFAST_ReaderCryptoHandle& local_reader = AESGCMGMACFAST_ReaderCryptoHandle::narrow(sending_datareader_crypto);
+    AESGCMGMAC_ReaderCryptoHandle& local_reader = AESGCMGMAC_ReaderCryptoHandle::narrow(sending_datareader_crypto);
 
     if (local_reader.nil())
     {
@@ -551,10 +377,8 @@ bool AESGCMGMACFAST_Transform::encode_datareader_submessage(
     //Step 2 - If the maximum number of blocks have been processed, generate a new SessionKey
     auto session = &local_reader->Sessions[0];
     bool update_specific_keys = false;
-
-
     if (session->session_block_counter >= local_reader->max_blocks_per_session)
-    {    
+    {
         session->session_id += 1;
         update_specific_keys = true;
         compute_sessionkey(session->SessionKey, local_reader->EntityKeyMaterial.at(0),
@@ -562,17 +386,17 @@ bool AESGCMGMACFAST_Transform::encode_datareader_submessage(
 
         //ReceiverSpecific keys shall be computed specifically when needed
         session->session_block_counter = 0;
-        session->payload_block_counter = 0;
     }
 
     session->session_block_counter += 1;
 
-    auto iv_suffix = build_iv_suffix(session);
+    //Build remaining NONCE elements
+    std::array<uint8_t, initialization_vector_suffix_length> initialization_vector_suffix;  //iv suffix changes with every operation
 
-    //RAND_bytes(initialization_vector_suffix.data(), initialization_vector_suffix_length);
+    RAND_bytes(initialization_vector_suffix.data(), initialization_vector_suffix_length);
     std::array<uint8_t, 12> initialization_vector; //96 bytes, session_id + suffix
     memcpy(initialization_vector.data(), &(session->session_id), 4);
-    memcpy(initialization_vector.data() + 4, iv_suffix.data(), 8);
+    memcpy(initialization_vector.data() + 4, initialization_vector_suffix.data(), 8);
     std::array<uint8_t, 4> session_id;
     memcpy(session_id.data(), &(session->session_id), 4);
 
@@ -595,7 +419,7 @@ bool AESGCMGMACFAST_Transform::encode_datareader_submessage(
         const char* length_position = serializer.getCurrentPosition();
 
         serialize_SecureDataHeader(serializer, local_reader->EntityKeyMaterial.at(0).transformation_kind,
-                local_reader->EntityKeyMaterial.at(0).sender_key_id, session_id, iv_suffix);
+                local_reader->EntityKeyMaterial.at(0).sender_key_id, session_id, initialization_vector_suffix);
 
         eprosima::fastcdr::Cdr::state current_state = serializer.getState();
         //TODO(Ricardo) fastcdr functinality: length substracting two Cdr::state.
@@ -665,14 +489,14 @@ bool AESGCMGMACFAST_Transform::encode_datareader_submessage(
     return true;
 }
 
-bool AESGCMGMACFAST_Transform::encode_rtps_message(
+bool AESGCMGMAC_Transform::encode_rtps_message(
         CDRMessage_t& encoded_rtps_message,
         const CDRMessage_t& plain_rtps_message,
         ParticipantCryptoHandle& sending_crypto,
         std::vector<std::shared_ptr<ParticipantCryptoHandle>>& receiving_crypto_list,
         SecurityException& /*exception*/)
 {
-    AESGCMGMACFAST_ParticipantCryptoHandle& local_participant = AESGCMGMACFAST_ParticipantCryptoHandle::narrow(sending_crypto);
+    AESGCMGMAC_ParticipantCryptoHandle& local_participant = AESGCMGMAC_ParticipantCryptoHandle::narrow(sending_crypto);
 
     if (local_participant.nil())
     {
@@ -692,7 +516,6 @@ bool AESGCMGMACFAST_Transform::encode_rtps_message(
 
     std::unique_lock<std::mutex> lock(local_participant->mutex_);
 
-
     // If the maximum number of blocks have been processed, generate a new SessionKey
     bool update_specific_keys = false;
     if (local_participant->Session.session_block_counter >= local_participant->max_blocks_per_session)
@@ -704,19 +527,32 @@ bool AESGCMGMACFAST_Transform::encode_rtps_message(
 
         //ReceiverSpecific keys shall be computed specifically when needed
         local_participant->Session.session_block_counter = 0;
-        local_participant->Session.payload_block_counter = 0;
         //Insert outdate session_id values in all RemoteParticipant trackers to trigger a SessionkeyUpdate
     }
 
-    //fprintf(stdout, "[%u] encode rtps submessage\n", local_participant->Session.session_id);
     local_participant->Session.session_block_counter += 1;
 
-    auto iv_suffix = build_iv_suffix(&(local_participant->Session));
+    //Build remaining NONCE elements
+    std::array<uint8_t, initialization_vector_suffix_length> initialization_vector_suffix;  //iv suffix changes with every operation
 
+    uint32_t suffix_value = (local_participant->Session.session_block_counter - 1) * 5000;
+
+    memcpy(initialization_vector_suffix.data(), &suffix_value, sizeof(suffix_value));
+    memset(initialization_vector_suffix.data() + 4, 0, 4);
+    /*
+    initialization_vector_suffix[0] = static_cast<uint8_t>((suffix_value >> 24) & 0xFF);
+    initialization_vector_suffix[1] = static_cast<uint8_t>((suffix_value >> 16) & 0xFF);
+    initialization_vector_suffix[2] = static_cast<uint8_t>((suffix_value >> 8) & 0xFF);
+    initialization_vector_suffix[3] = static_cast<uint8_t>((suffix_value) & 0xFF);
+
+    for(int i = 4; i < 8; i++)
+        initialization_vector_suffix[i] = 0;
+*/
+    //RAND_bytes(initialization_vector_suffix.data(), initialization_vector_suffix_length);
     std::array<uint8_t, 12> initialization_vector; //96 bytes, session_id + suffix
 
     memcpy(initialization_vector.data(), &(local_participant->Session.session_id), 4);
-    memcpy(initialization_vector.data() + 4, iv_suffix.data(), 8);
+    memcpy(initialization_vector.data() + 4, initialization_vector_suffix.data(), 8);
 
     std::array<uint8_t, 4> session_id;
     memcpy(session_id.data(), &(local_participant->Session.session_id), 4);
@@ -740,7 +576,7 @@ bool AESGCMGMACFAST_Transform::encode_rtps_message(
         const char* length_position = serializer.getCurrentPosition();
 
         serialize_SecureDataHeader(serializer, local_participant->ParticipantKeyMaterial.transformation_kind,
-                local_participant->ParticipantKeyMaterial.sender_key_id, session_id, iv_suffix);
+                local_participant->ParticipantKeyMaterial.sender_key_id, session_id, initialization_vector_suffix);
 
         eprosima::fastcdr::Cdr::state current_state = serializer.getState();
         //TODO(Ricardo) fastcdr functinality: length substracting two Cdr::state.
@@ -809,14 +645,14 @@ bool AESGCMGMACFAST_Transform::encode_rtps_message(
     return true;
 }
 
-bool AESGCMGMACFAST_Transform::decode_rtps_message(
+bool AESGCMGMAC_Transform::decode_rtps_message(
         CDRMessage_t& plain_buffer,
         const CDRMessage_t& encoded_buffer,
         const ParticipantCryptoHandle& /*receiving_crypto*/,
         const ParticipantCryptoHandle& sending_crypto,
         SecurityException& /*exception*/)
 {
-    const AESGCMGMACFAST_ParticipantCryptoHandle& sending_participant = AESGCMGMACFAST_ParticipantCryptoHandle::narrow(
+    const AESGCMGMAC_ParticipantCryptoHandle& sending_participant = AESGCMGMAC_ParticipantCryptoHandle::narrow(
             sending_crypto);
 
     if (sending_participant.nil())
@@ -1019,7 +855,7 @@ bool AESGCMGMACFAST_Transform::decode_rtps_message(
     return true;
 }
 
-bool AESGCMGMACFAST_Transform::preprocess_secure_submsg(
+bool AESGCMGMAC_Transform::preprocess_secure_submsg(
         DatawriterCryptoHandle** datawriter_crypto,
         DatareaderCryptoHandle** datareader_crypto,
         SecureSubmessageCategory_t& secure_submessage_category,
@@ -1029,7 +865,7 @@ bool AESGCMGMACFAST_Transform::preprocess_secure_submsg(
         SecurityException& exception)
 {
 
-    AESGCMGMACFAST_ParticipantCryptoHandle& remote_participant = AESGCMGMACFAST_ParticipantCryptoHandle::narrow(sending_crypto);
+    AESGCMGMAC_ParticipantCryptoHandle& remote_participant = AESGCMGMAC_ParticipantCryptoHandle::narrow(sending_crypto);
     if (remote_participant.nil())
     {
         logWarning(SECURITY_CRYPTO, "Invalid CryptoHandle");
@@ -1037,8 +873,8 @@ bool AESGCMGMACFAST_Transform::preprocess_secure_submsg(
         return false;
     }
 
-    AESGCMGMACFAST_ParticipantCryptoHandle& local_participant =
-        AESGCMGMACFAST_ParticipantCryptoHandle::narrow(receiving_crypto);
+    AESGCMGMAC_ParticipantCryptoHandle& local_participant =
+        AESGCMGMAC_ParticipantCryptoHandle::narrow(receiving_crypto);
     if (local_participant.nil())
     {
         logWarning(SECURITY_CRYPTO, "Invalid CryptoHandle");
@@ -1101,7 +937,7 @@ bool AESGCMGMACFAST_Transform::preprocess_secure_submsg(
 
     for (auto& wt_sp : remote_participant->Writers)
     {
-        AESGCMGMACFAST_WriterCryptoHandle& writer = AESGCMGMACFAST_WriterCryptoHandle::narrow(*wt_sp);
+        AESGCMGMAC_WriterCryptoHandle& writer = AESGCMGMAC_WriterCryptoHandle::narrow(*wt_sp);
         auto& wKeyMats = writer->Entity2RemoteKeyMaterial;
 
         if (wKeyMats.size() == 0)
@@ -1137,7 +973,7 @@ bool AESGCMGMACFAST_Transform::preprocess_secure_submsg(
 
     for (auto& rd_sh : remote_participant->Readers)
     {
-        AESGCMGMACFAST_ReaderCryptoHandle& reader = AESGCMGMACFAST_ReaderCryptoHandle::narrow(*rd_sh);
+        AESGCMGMAC_ReaderCryptoHandle& reader = AESGCMGMAC_ReaderCryptoHandle::narrow(*rd_sh);
 
         auto& rKeyMats = reader->Entity2RemoteKeyMaterial;
 
@@ -1176,16 +1012,14 @@ bool AESGCMGMACFAST_Transform::preprocess_secure_submsg(
     return false;
 }
 
-bool AESGCMGMACFAST_Transform::decode_datawriter_submessage(
+bool AESGCMGMAC_Transform::decode_datawriter_submessage(
         CDRMessage_t& plain_rtps_submessage,
         CDRMessage_t& encoded_rtps_submessage,
         DatareaderCryptoHandle& /*receiving_datareader_crypto*/,
         DatawriterCryptoHandle& sending_datawriter_cryupto,
         SecurityException& /*exception*/)
 {
-    auto& impl_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow(sending_datawriter_cryupto);
-    auto& sending_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow_base(sending_datawriter_cryupto);
-           
+    AESGCMGMAC_WriterCryptoHandle& sending_writer = AESGCMGMAC_WriterCryptoHandle::narrow(sending_datawriter_cryupto);
 
     if (sending_writer.nil())
     {
@@ -1262,37 +1096,17 @@ bool AESGCMGMACFAST_Transform::decode_datawriter_submessage(
         return false;
     }
 
-    int session_id;
+    uint32_t session_id;
     memcpy(&session_id, header.session_id.data(), 4);
-    
-
     //Sessionkey
     std::array<uint8_t, 32> session_key{};
-    //fprintf(stdout, "---------- check impl Writer [%d]----------\n", impl_writer.d_session);
-    //if(!impl_writer.d_buffer){
-        compute_sessionkey(session_key, *keyMat, session_id);
-        //if(-1 > session_id || session_id > 20){
-        /*if(guid == 2147483651){
-            fprintf(stdout, "Decode Writer Precomputation [Session %u]\n", session_id);
-            set_for_writer_precomputation(impl_writer, session_key, session_id);
-        }*/
-    /*}
-    else{
-        memcpy(&session_key, &impl_writer.d_key, sizeof(session_key));
-    }*/
-
+    compute_sessionkey(session_key, *keyMat, session_id);
     //IV
     std::array<uint8_t, 12> initialization_vector{};
     memcpy(initialization_vector.data(), header.session_id.data(), 4);
     memcpy(initialization_vector.data() + 4,
             header.initialization_vector_suffix.data(), initialization_vector_suffix_length);
 
-   /* 
-    fprintf(stdout, "[ID = %u | bcnt = ", session_id);
-    for(auto byte : header.initialization_vector_suffix)
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << " ";
-    fprintf(stdout, "] decode datawriter submessage\n");
-   */
     // Body
     uint32_t body_length = 0, body_align = 0;
     eprosima::fastcdr::Cdr::state protected_body_state = decoder.getState();
@@ -1363,15 +1177,14 @@ bool AESGCMGMACFAST_Transform::decode_datawriter_submessage(
     }
 
     uint32_t length = plain_rtps_submessage.max_size - plain_rtps_submessage.pos;
-        if (!deserialize_SecureDataBody(decoder, is_encrypted ? body_state : protected_body_state, tag,
+    if (!deserialize_SecureDataBody(decoder, is_encrypted ? body_state : protected_body_state, tag,
                 is_encrypted ? body_length : body_length + 4,
                 keyMat->transformation_kind, session_key, initialization_vector,
                 &plain_rtps_submessage.buffer[plain_rtps_submessage.pos], length))
-        {
-            logWarning(SECURITY_CRYPTO, "Error decoding content");
-            return false;
-        }
-    
+    {
+        logWarning(SECURITY_CRYPTO, "Error decoding content");
+        return false;
+    }
 
     plain_rtps_submessage.length += length;
     encoded_rtps_submessage.pos += static_cast<uint32_t>(decoder.getSerializedDataLength());
@@ -1379,15 +1192,14 @@ bool AESGCMGMACFAST_Transform::decode_datawriter_submessage(
     return true;
 }
 
-bool AESGCMGMACFAST_Transform::decode_datareader_submessage(
+bool AESGCMGMAC_Transform::decode_datareader_submessage(
         CDRMessage_t& plain_rtps_submessage,
         CDRMessage_t& encoded_rtps_submessage,
         DatawriterCryptoHandle& /*receiving_datawriter_crypto*/,
         DatareaderCryptoHandle& sending_datareader_crypto,
         SecurityException& /*exception*/)
 {
-    auto& impl_reader = AESGCMGMACFAST_ReaderCryptoHandle::narrow(sending_datareader_crypto);
-    auto& sending_reader = AESGCMGMACFAST_ReaderCryptoHandle::narrow_base(sending_datareader_crypto);
+    AESGCMGMAC_ReaderCryptoHandle& sending_reader = AESGCMGMAC_ReaderCryptoHandle::narrow(sending_datareader_crypto);
 
     if (sending_reader.nil())
     {
@@ -1466,17 +1278,14 @@ bool AESGCMGMACFAST_Transform::decode_datareader_submessage(
 
     uint32_t session_id;
     memcpy(&session_id, header.session_id.data(), 4);
-
     //Sessionkey
     std::array<uint8_t, 32> session_key{};
     compute_sessionkey(session_key, *keyMat, session_id);
-
     //IV
     std::array<uint8_t, 12> initialization_vector{};
     memcpy(initialization_vector.data(), header.session_id.data(), 4);
     memcpy(initialization_vector.data() + 4,
             header.initialization_vector_suffix.data(), initialization_vector_suffix_length);
-
 
     // Body
     uint32_t body_length = 0, body_align = 0;
@@ -1548,7 +1357,6 @@ bool AESGCMGMACFAST_Transform::decode_datareader_submessage(
     }
 
     uint32_t length = plain_rtps_submessage.max_size - plain_rtps_submessage.pos;
-    
     if (!deserialize_SecureDataBody(decoder, is_encrypted ? body_state : protected_body_state, tag,
                 is_encrypted ? body_length : body_length + 4,
                 keyMat->transformation_kind, session_key, initialization_vector,
@@ -1564,7 +1372,7 @@ bool AESGCMGMACFAST_Transform::decode_datareader_submessage(
     return true;
 }
 
-bool AESGCMGMACFAST_Transform::decode_serialized_payload(
+bool AESGCMGMAC_Transform::decode_serialized_payload(
         SerializedPayload_t& plain_payload,
         const SerializedPayload_t& encoded_payload,
         const std::vector<uint8_t>& /*inline_qos*/,
@@ -1573,9 +1381,7 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
         SecurityException& exception)
 {
 
-
-    auto& impl_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow(sending_datawriter_crypto);
-    auto& sending_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow(sending_datawriter_crypto);
+    AESGCMGMAC_WriterCryptoHandle& sending_writer = AESGCMGMAC_WriterCryptoHandle::narrow(sending_datawriter_crypto);
 
     if (sending_writer.nil())
     {
@@ -1627,29 +1433,16 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
 
     uint32_t session_id;
     memcpy(&session_id, header.session_id.data(), 4);
-    //fprintf(stdout, "[%u] decode serialized payload\n", session_id);
 
     //Sessionkey
     std::array<uint8_t, 32> session_key{};
-    //if(-1 < session_id && session_id < 20)
     compute_sessionkey(session_key, *keyMat, session_id);
-    if(encoded_payload.length != 492 && encoded_payload.length != 488 && !impl_writer.d_buffer) 
-    {
-        //if(guid == 2147483651){
-          //  fprintf(stdout, "Decode Writer Precomputation [Session %u]\n", session_id);
-      //      fprintf(stdout, "encode payalod.length %d]\n", encoded_payload.length);
-            set_for_writer_precomputation(impl_writer, session_key, session_id);
-       // }
-    }
-
     //IV
     std::array<uint8_t, 12> initialization_vector{};
     memcpy(initialization_vector.data(), header.session_id.data(), 4);
     memcpy(initialization_vector.data() + 4,
             header.initialization_vector_suffix.data(), initialization_vector_suffix_length);
 
-    uint32_t block_counter;
-    memcpy(&block_counter, header.initialization_vector_suffix.data() + 4, sizeof(block_counter)); 
 
     // Body
     uint32_t body_length = 0, body_align = 0;
@@ -1693,24 +1486,12 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
     }
 
     uint32_t length = plain_payload.max_size;
-
-    if(impl_writer.d_buffer){ 
-        if (!deserialize_SecureDataBody_precomputation(decoder, protected_body_state, tag,
-            body_length, keyMat->transformation_kind, session_key, initialization_vector,
-            impl_writer.d_buffer, impl_writer.d_ctx, block_counter,
-            plain_payload.data, length))
-        {
-            logWarning(SECURITY_CRYPTO, "Error decoding content");
-            return false;
-        }
-    } else {
-        if (!deserialize_SecureDataBody(decoder, protected_body_state, tag, body_length,
+    if (!deserialize_SecureDataBody(decoder, protected_body_state, tag, body_length,
                 keyMat->transformation_kind, session_key, initialization_vector,
                 plain_payload.data, length))
-        {
-            logWarning(SECURITY_CRYPTO, "Error decoding content");
-            return false;
-        }
+    {
+        logWarning(SECURITY_CRYPTO, "Error decoding content");
+        return false;
     }
 
     plain_payload.length = length;
@@ -1719,7 +1500,7 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
     return true;
 }
 
-void AESGCMGMACFAST_Transform::compute_sessionkey(
+void AESGCMGMAC_Transform::compute_sessionkey(
         std::array<uint8_t, 32>& session_key,
         const KeyMaterial_AES_GCM_GMAC& key_mat,
         const uint32_t session_id)
@@ -1732,7 +1513,7 @@ void AESGCMGMACFAST_Transform::compute_sessionkey(
 
 }
 
-void AESGCMGMACFAST_Transform::compute_sessionkey(
+void AESGCMGMAC_Transform::compute_sessionkey(
         std::array<uint8_t, 32>& session_key,
         bool receiver_specific,
         const std::array<uint8_t, 32>& master_key,
@@ -1785,7 +1566,7 @@ void AESGCMGMACFAST_Transform::compute_sessionkey(
 #endif // if IS_OPENSSL_1_1
 }
 
-void AESGCMGMACFAST_Transform::serialize_SecureDataHeader(
+void AESGCMGMAC_Transform::serialize_SecureDataHeader(
         eprosima::fastcdr::Cdr& serializer,
         const CryptoTransformKind& transformation_kind,
         const CryptoTransformKeyId& transformation_key_id,
@@ -1801,172 +1582,7 @@ void AESGCMGMACFAST_Transform::serialize_SecureDataHeader(
 
 }
 
-
-
-
-bool AESGCMGMACFAST_Transform::serialize_SecureDataBody_precomputation(
-        eprosima::fastcdr::Cdr& serializer,
-        const std::array<uint8_t, 4>& transformation_kind,
-        //const std::array<uint8_t, 32>& session_key,
-        //const std::array<uint8_t, 12>& initialization_vector,
-        eprosima::fastcdr::FastBuffer& output_buffer,
-        std::shared_ptr<CircularBuffer> buffer,
-        EVP_CIPHER_CTX* ctx,
-        int bcnt,
-        octet* plain_buffer,
-        uint32_t plain_buffer_len,
-        SecureDataTag& tag,
-        bool submessage)
-{
-    bool do_encryption = (transformation_kind == c_transfrom_kind_aes128_gcm ||
-            transformation_kind == c_transfrom_kind_aes256_gcm);
-
-    // AES_BLOCK_SIZE = 16
-    int cipher_block_size = 0, actual_size = 0, final_size = 0;
-
-    if (!do_encryption)
-    {
-        // Auth only. SEC_BODY should not be created. Plain buffer should be copied instead.
-        if ((output_buffer.getBufferSize() - (serializer.getCurrentPosition() - serializer.getBufferPointer())) <
-                plain_buffer_len)
-        {
-            logError(SECURITY_CRYPTO, "Error in fastcdr trying to copy payload");
-            EVP_CIPHER_CTX_free(ctx);
-            return false;
-        }
-        memcpy(serializer.getCurrentPosition(), plain_buffer, plain_buffer_len);
-        serializer.jump(plain_buffer_len);
-
-
-        unsigned char *ks = buffer->get_keystream(plain_buffer_len, bcnt, ctx);
-
-        int block_cnt;
-
-        if (!borim_EVP_EncryptUpdate(ctx, NULL, &actual_size, plain_buffer, static_cast<int>(plain_buffer_len), ks, block_cnt))
-        {
-            logError(SECURITY_CRYPTO, "Unable to encode the payload. EVP_EncryptUpdate function returns an error");
-            EVP_CIPHER_CTX_free(ctx);
-            return false;
-        }
-
-        free(ks);
-
-        if (!EVP_EncryptFinal_ex(ctx, nullptr, &final_size))
-        {
-            logError(SECURITY_CRYPTO, "Unable to encode the payload. EVP_EncryptFinal function returns an error");
-            EVP_CIPHER_CTX_free(ctx);
-            return false;
-        }
-
-    }
-    else
-    {
-#if FASTDDS_IS_BIG_ENDIAN_TARGET
-        octet flags = 0x0;
-        serializer.changeEndianness(eprosima::fastcdr::Cdr::Endianness::BIG_ENDIANNESS);
-#else
-        octet flags = BIT(0);
-        serializer.changeEndianness(eprosima::fastcdr::Cdr::Endianness::LITTLE_ENDIANNESS);
-#endif // if FASTDDS_IS_BIG_ENDIAN_TARGET
-
-        if (submessage)
-        {
-            serializer << SecureBodySubmessage << flags;
-        }
-
-        // Store current state to serialize sequence length at the end of the function
-        eprosima::fastcdr::Cdr::state sequence_length_state = serializer.getState();
-
-        if (submessage)
-        {
-            // Serialize dummy length
-            uint16_t length = 0;
-            serializer << length;
-        }
-
-        // Serialize dummy content length
-        uint32_t cnt_length = 0;
-        serializer << cnt_length;
-
-        //Cypher the plain rtps message -> SecureDataBody
-
-        unsigned char* output_buffer_raw = (unsigned char*)serializer.getCurrentPosition();
-
-        // Check output_buffer contains enough memory to cypher.
-        // - EVP_EncryptUpdate needs at maximum: plain_buffer_len + cipher_block_size - 1.
-        // - EVP_EncryptFinal needs ad maximum cipher_block_size.
-        if ((output_buffer.getBufferSize() - (serializer.getCurrentPosition() - serializer.getBufferPointer())) <
-                (plain_buffer_len + (2 * cipher_block_size) - 1))
-        {
-            logError(SECURITY_CRYPTO, "Error in fastcdr trying to cipher payload");
-            EVP_CIPHER_CTX_free(ctx);
-            return false;
-        }
-
-
-        unsigned char * ks = buffer->get_keystream(plain_buffer_len, bcnt, ctx);
-        int block_cnt;
-
-        if(!plain_buffer || plain_buffer_len == 0){
-           // fprintf(stdout, "*** plain buffer was null, do not Encrypt ***\n");
-        }
-        // JINHO: Return -1
-        else if (!borim_EVP_EncryptUpdate(ctx, output_buffer_raw, &actual_size, plain_buffer,
-                    static_cast<int>(plain_buffer_len), ks, block_cnt))
-        {
-            logError(SECURITY_CRYPTO, "Unable to encode the payload. EVP_EncryptUpdate function returns an error");
-            EVP_CIPHER_CTX_free(ctx);
-            return false;
-        }
-
-        free(ks);
-
-        if (!EVP_EncryptFinal(ctx, &output_buffer_raw[actual_size], &final_size))
-        {
-            logError(SECURITY_CRYPTO, "Unable to encode the payload. EVP_EncryptFinal function returns an error");
-            EVP_CIPHER_CTX_free(ctx);
-            return false;
-        }
-
-        serializer.jump(actual_size + final_size);
-
-        eprosima::fastcdr::Cdr::state current_state = serializer.getState();
-
-        // Serialize body sequence length;
-        cnt_length = static_cast<uint32_t>(actual_size + final_size);
-        serializer.setState(sequence_length_state);
-        if (submessage)
-        {
-            uint16_t length = static_cast<uint16_t>(actual_size + final_size + sizeof(uint32_t));
-            length = (length + 3) & ~3;
-            serializer << length;
-        }
-
-        serializer.serialize(cnt_length, eprosima::fastcdr::Cdr::Endianness::BIG_ENDIANNESS);
-
-        serializer.setState(current_state);
-
-    }
-
-    // Get commmon_mac
-    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, AES_BLOCK_SIZE, tag.common_mac.data());
-
-    if (submessage)
-    {
-        // Align submessage to 4.
-        size_t alignment =
-            serializer.alignment(serializer.getCurrentPosition() - serializer.getBufferPointer(), sizeof(int32_t));
-        for (size_t count = 0; count != alignment; ++count)
-        {
-            uint8_t c = 0;
-            serializer << c;
-        }
-    }
-
-    return true;
-}
-
-bool AESGCMGMACFAST_Transform::serialize_SecureDataBody(
+bool AESGCMGMAC_Transform::serialize_SecureDataBody(
         eprosima::fastcdr::Cdr& serializer,
         const std::array<uint8_t, 4>& transformation_kind,
         const std::array<uint8_t, 32>& session_key,
@@ -2004,7 +1620,6 @@ bool AESGCMGMACFAST_Transform::serialize_SecureDataBody(
                     initialization_vector.data()))
         {
             logError(SECURITY_CRYPTO, "Unable to encode the payload. EVP_EncryptInit function returns an error");
-
             EVP_CIPHER_CTX_free(e_ctx);
             return false;
         }
@@ -2091,7 +1706,6 @@ bool AESGCMGMACFAST_Transform::serialize_SecureDataBody(
             return false;
         }
 
-
         if (!EVP_EncryptFinal(e_ctx, &output_buffer_raw[actual_size], &final_size))
         {
             logError(SECURITY_CRYPTO, "Unable to encode the payload. EVP_EncryptFinal function returns an error");
@@ -2138,7 +1752,7 @@ bool AESGCMGMACFAST_Transform::serialize_SecureDataBody(
     return true;
 }
 
-bool AESGCMGMACFAST_Transform::serialize_SecureDataTag(
+bool AESGCMGMAC_Transform::serialize_SecureDataTag(
         eprosima::fastcdr::Cdr& serializer,
         const std::array<uint8_t, 4>& transformation_kind,
         const uint32_t session_id,
@@ -2170,7 +1784,7 @@ bool AESGCMGMACFAST_Transform::serialize_SecureDataTag(
     //Check the list of receivers, search for keys and compute session keys as needed
     for (auto rec = receiving_crypto_list.begin(); rec != receiving_crypto_list.end(); ++rec)
     {
-        AESGCMGMACFAST_EntityCryptoHandle& remote_entity = AESGCMGMACFAST_EntityCryptoHandleImpl::narrow(**rec);
+        AESGCMGMAC_EntityCryptoHandle& remote_entity = AESGCMGMAC_EntityCryptoHandle::narrow(**rec);
 
         if (remote_entity.nil())
         {
@@ -2257,9 +1871,9 @@ bool AESGCMGMACFAST_Transform::serialize_SecureDataTag(
     return true;
 }
 
-bool AESGCMGMACFAST_Transform::serialize_SecureDataTag(
+bool AESGCMGMAC_Transform::serialize_SecureDataTag(
         eprosima::fastcdr::Cdr& serializer,
-        const AESGCMGMACFAST_ParticipantCryptoHandle& local_participant,
+        const AESGCMGMAC_ParticipantCryptoHandle& local_participant,
         const std::array<uint8_t, 12>& initialization_vector,
         std::vector<std::shared_ptr<ParticipantCryptoHandle>>& receiving_crypto_list,
         bool update_specific_keys,
@@ -2275,7 +1889,7 @@ bool AESGCMGMACFAST_Transform::serialize_SecureDataTag(
     for (auto rec = receiving_crypto_list.begin(); rec != receiving_crypto_list.end(); ++rec)
     {
 
-        AESGCMGMACFAST_ParticipantCryptoHandle& remote_participant = AESGCMGMACFAST_ParticipantCryptoHandle::narrow(**rec);
+        AESGCMGMAC_ParticipantCryptoHandle& remote_participant = AESGCMGMAC_ParticipantCryptoHandle::narrow(**rec);
 
         if (remote_participant.nil())
         {
@@ -2369,7 +1983,7 @@ bool AESGCMGMACFAST_Transform::serialize_SecureDataTag(
     return true;
 }
 
-SecureDataHeader AESGCMGMACFAST_Transform::deserialize_SecureDataHeader(
+SecureDataHeader AESGCMGMAC_Transform::deserialize_SecureDataHeader(
         eprosima::fastcdr::Cdr& decoder)
 {
     SecureDataHeader header;
@@ -2385,98 +1999,7 @@ SecureDataHeader AESGCMGMACFAST_Transform::deserialize_SecureDataHeader(
     return header;
 }
 
-bool AESGCMGMACFAST_Transform::deserialize_SecureDataBody_precomputation(
-        eprosima::fastcdr::Cdr& decoder,
-        eprosima::fastcdr::Cdr::state& body_state,
-        SecureDataTag& tag,
-        const uint32_t body_length,
-        const std::array<uint8_t, 4>& transformation_kind,
-        const std::array<uint8_t, 32>& session_key,
-        const std::array<uint8_t, 12>& initialization_vector,
-        std::shared_ptr<CircularBuffer> buffer,
-        EVP_CIPHER_CTX* ctx,
-        int bcnt,
-        octet* plain_buffer,
-        uint32_t& plain_buffer_len)
-{
-   // fprintf(stdout, "deserialize_SecureDataBody\n");
-    eprosima::fastcdr::Cdr::state current_state = decoder.getState();
-    decoder.setState(body_state);
-
-    bool do_encryption = (transformation_kind == c_transfrom_kind_aes128_gcm ||
-            transformation_kind == c_transfrom_kind_aes256_gcm);
-    bool use_256_bits = (transformation_kind == c_transfrom_kind_aes256_gcm ||
-            transformation_kind == c_transfrom_kind_aes256_gmac);
-
-    int cipher_block_size = 16, actual_size = 0, final_size = 0;
-
-    uint32_t protected_len = body_length;
-    if (do_encryption)
-    {
-        decoder.deserialize(protected_len, eprosima::fastcdr::Cdr::Endianness::BIG_ENDIANNESS);
-
-        // Check plain_payload contains enough memory to cypher.
-        // - EVP_DecryptUpdate needs at maximum: body_length + cipher_block_size.
-        if (plain_buffer_len < (protected_len + cipher_block_size))
-        {
-            logWarning(SECURITY_CRYPTO, "Error in fastcdr trying to decode payload");
-            return false;
-        }
-    }
-
-    unsigned char *ks = buffer->get_keystream(protected_len, bcnt, ctx);
-
-    int block_cnt;
-
-    octet* output_buffer = do_encryption ? plain_buffer : nullptr;
-    unsigned char* input_buffer = (unsigned char*)decoder.getCurrentPosition();
-    if (!borim_EVP_EncryptUpdate(ctx, output_buffer, &actual_size, input_buffer, protected_len, ks, block_cnt))
-    {
-        logWarning(SECURITY_CRYPTO, "Unable to decode the payload. EVP_DecryptUpdate function returns an error");
-        EVP_CIPHER_CTX_free(ctx);
-        return false;
-    }
-
-    free(ks);
-
-
-    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, AES_BLOCK_SIZE, tag.common_mac.data());
-   // fprintf(stdout, "---check point in decode XOR\n");
-
-    if (!EVP_DecryptFinal(ctx, output_buffer ? &output_buffer[actual_size] : NULL, &final_size))
-    {
-        logWarning(SECURITY_CRYPTO, "Unable to decode the payload. EVP_DecryptFinal function returns an error");
-        EVP_CIPHER_CTX_free(ctx);
-        return false;
-    }
-
-    uint32_t cnt_len = do_encryption ? static_cast<uint32_t>(actual_size + final_size) : body_length;
-    if (plain_buffer_len < cnt_len)
-    {
-        logWarning(SECURITY_CRYPTO, "Error in fastcdr trying to decode payload");
-        return false;
-    }
-
-    plain_buffer_len = cnt_len;
-    if (output_buffer == nullptr)
-    {
-        memcpy(plain_buffer, input_buffer, plain_buffer_len);
-    }
-
-    decoder.setState(current_state);
-
-    // Align submessage to 4.
-    size_t alignment = decoder.alignment(decoder.getCurrentPosition() - decoder.getBufferPointer(), sizeof(int32_t));
-    for (size_t count = 0; count != alignment; ++count)
-    {
-        uint8_t c = 0;
-        decoder >> c;
-    }
-
-    return true;
-}
-
-bool AESGCMGMACFAST_Transform::deserialize_SecureDataBody(
+bool AESGCMGMAC_Transform::deserialize_SecureDataBody(
         eprosima::fastcdr::Cdr& decoder,
         eprosima::fastcdr::Cdr::state& body_state,
         SecureDataTag& tag,
@@ -2584,7 +2107,7 @@ bool AESGCMGMACFAST_Transform::deserialize_SecureDataBody(
     return true;
 }
 
-bool AESGCMGMACFAST_Transform::predeserialize_SecureDataBody(
+bool AESGCMGMAC_Transform::predeserialize_SecureDataBody(
         eprosima::fastcdr::Cdr& decoder,
         uint32_t& body_length,
         uint32_t& body_align)
@@ -2615,7 +2138,7 @@ bool AESGCMGMACFAST_Transform::predeserialize_SecureDataBody(
     return (secure_submsg_id == SecureBodySubmessage);
 }
 
-bool AESGCMGMACFAST_Transform::deserialize_SecureDataTag(
+bool AESGCMGMAC_Transform::deserialize_SecureDataTag(
         eprosima::fastcdr::Cdr& decoder,
         SecureDataTag& tag,
         const CryptoTransformKind& transformation_kind,
@@ -2734,7 +2257,7 @@ CONSTEXPR uint32_t aesgcmgmac_header_length = 20;
 CONSTEXPR uint32_t aesgcmgmac_body_length_attr = 4 + 3 /*possible alignment*/;
 CONSTEXPR uint32_t aesgcmgmac_common_tag = 16;
 
-uint32_t AESGCMGMACFAST_Transform::calculate_extra_size_for_rtps_message(
+uint32_t AESGCMGMAC_Transform::calculate_extra_size_for_rtps_message(
         uint32_t number_discovered_participants) const
 {
     uint32_t calculate = srtps_prefix_length  +
@@ -2750,7 +2273,7 @@ uint32_t AESGCMGMACFAST_Transform::calculate_extra_size_for_rtps_message(
     return calculate;
 }
 
-uint32_t AESGCMGMACFAST_Transform::calculate_extra_size_for_rtps_submessage(
+uint32_t AESGCMGMAC_Transform::calculate_extra_size_for_rtps_submessage(
         uint32_t number_discovered_readers) const
 {
     uint32_t calculate = sec_prefix_length  +
@@ -2766,7 +2289,7 @@ uint32_t AESGCMGMACFAST_Transform::calculate_extra_size_for_rtps_submessage(
     return calculate;
 }
 
-uint32_t AESGCMGMACFAST_Transform::calculate_extra_size_for_encoded_payload(
+uint32_t AESGCMGMAC_Transform::calculate_extra_size_for_encoded_payload(
         uint32_t number_discovered_readers) const
 {
     uint32_t calculate = aesgcmgmac_header_length +
@@ -2780,14 +2303,14 @@ uint32_t AESGCMGMACFAST_Transform::calculate_extra_size_for_encoded_payload(
     return calculate;
 }
 
-bool AESGCMGMACFAST_Transform::lookup_reader(
-        AESGCMGMACFAST_ParticipantCryptoHandle& participant,
+bool AESGCMGMAC_Transform::lookup_reader(
+        AESGCMGMAC_ParticipantCryptoHandle& participant,
         DatareaderCryptoHandle** datareader_crypto,
         CryptoTransformKeyId key_id)
 {
     for (auto& readerHandle : participant->Readers)
     {
-        AESGCMGMACFAST_ReaderCryptoHandle& reader = AESGCMGMACFAST_ReaderCryptoHandle::narrow(*readerHandle);
+        AESGCMGMAC_ReaderCryptoHandle& reader = AESGCMGMAC_ReaderCryptoHandle::narrow(*readerHandle);
 
         if (reader->Remote2EntityKeyMaterial.empty())
         {
@@ -2808,14 +2331,14 @@ bool AESGCMGMACFAST_Transform::lookup_reader(
     return false;
 }
 
-bool AESGCMGMACFAST_Transform::lookup_writer(
-        AESGCMGMACFAST_ParticipantCryptoHandle& participant,
+bool AESGCMGMAC_Transform::lookup_writer(
+        AESGCMGMAC_ParticipantCryptoHandle& participant,
         DatawriterCryptoHandle** datawriter_crypto,
         CryptoTransformKeyId key_id)
 {
     for (auto& writerHandle : participant->Writers)
     {
-        AESGCMGMACFAST_WriterCryptoHandle& writer = AESGCMGMACFAST_WriterCryptoHandle::narrow(*writerHandle);
+        AESGCMGMAC_WriterCryptoHandle& writer = AESGCMGMAC_WriterCryptoHandle::narrow(*writerHandle);
 
         if (writer->Remote2EntityKeyMaterial.empty())
         {

@@ -1,4 +1,4 @@
-// Copyright 2016 Proyectos y Sistemas de Mantenimiento SL (e)Prosima).
+// Copyright 2016 Proyectos y Sistemas de Mantenimiento SL (eProsima).
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 // limitations under the License.
 
 /*!
- * @file AESGCMGMACFAST_KeyFactory.cpp
+ * @file AESGCMGMAC_KeyFactory.cpp
  */
 
 #include <openssl/opensslv.h>
@@ -32,10 +32,8 @@
 
 #include <cassert>
 #include <string.h>
-#include <iomanip>
 
-#include <security/cryptography/AESGCMGMACFAST_KeyFactory.h>
-#include <security/cryptography/AESGCMGMAC_Types.h>
+#include <security/cryptography/AESGCMGMAC_KeyFactory.h>
 
 // Solve error with Win32 macro
 #ifdef WIN32
@@ -107,26 +105,15 @@ static bool create_kx_key(
 using namespace eprosima::fastrtps::rtps;
 using namespace eprosima::fastrtps::rtps::security;
 
-template <size_t N>
-std::string to_hex_string(const std::array<unsigned char, N>& arr)
-{
-    std::ostringstream oss;
-    for(auto b : arr){
-        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(b);
-    }
-    return oss.str();
-}
-
-
-ParticipantCryptoHandleDeleter_FAST::ParticipantCryptoHandleDeleter_FAST(
-        AESGCMGMACFAST_KeyFactory& factory)
+ParticipantCryptoHandleDeleter::ParticipantCryptoHandleDeleter(
+        AESGCMGMAC_KeyFactory& factory)
 {
     // TODO: promote to weak_from_this on C++17
-    factory_ = std::weak_ptr<AESGCMGMACFAST_KeyFactory>(factory.shared_from_this());
+    factory_ = std::weak_ptr<AESGCMGMAC_KeyFactory>(factory.shared_from_this());
 }
 
-void ParticipantCryptoHandleDeleter_FAST::operator ()(
-        AESGCMGMACFAST_ParticipantCryptoHandle* pk)
+void ParticipantCryptoHandleDeleter::operator ()(
+        AESGCMGMAC_ParticipantCryptoHandle* pk)
 {
     if (nullptr == pk)
     {
@@ -146,11 +133,11 @@ void ParticipantCryptoHandleDeleter_FAST::operator ()(
     factory_.lock()->release_participant(*pk);
 }
 
-AESGCMGMACFAST_KeyFactory::AESGCMGMACFAST_KeyFactory()
+AESGCMGMAC_KeyFactory::AESGCMGMAC_KeyFactory()
 {
 }
 
-std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_local_participant(
+std::shared_ptr<ParticipantCryptoHandle> AESGCMGMAC_KeyFactory::register_local_participant(
         const IdentityHandle& /*participant_identity*/,
         const PermissionsHandle& /*participant_permissions*/,
         const PropertySeq& participant_properties,
@@ -158,12 +145,12 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_loc
         SecurityException& /*exception*/)
 {
     // Create ParticipantCryptoHandle, fill deleter and Participant KeyMaterial and return it
-    std::shared_ptr<AESGCMGMACFAST_ParticipantCryptoHandle> PCrypto;
+    std::shared_ptr<AESGCMGMAC_ParticipantCryptoHandle> PCrypto;
 
     // generate the and populate the handle
     {
-        auto ih = new AESGCMGMACFAST_ParticipantCryptoHandle();
-        PCrypto = std::shared_ptr<AESGCMGMACFAST_ParticipantCryptoHandle>(ih, ParticipantCryptoHandleDeleter_FAST(*this));
+        auto ih = new AESGCMGMAC_ParticipantCryptoHandle();
+        PCrypto = std::shared_ptr<AESGCMGMAC_ParticipantCryptoHandle>(ih, ParticipantCryptoHandleDeleter(*this));
     }
 
     auto plugin_attrs = participant_security_attributes.plugin_participant_attributes;
@@ -175,7 +162,7 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_loc
     bool is_origin_auth =
             (plugin_attrs & PLUGIN_PARTICIPANT_SECURITY_ATTRIBUTES_FLAG_IS_RTPS_ORIGIN_AUTHENTICATED) != 0;
     bool use_256_bits = true;
-    uint64_t maxblockspersession = 800; //Default to key update every 32 usages if the user does not specify otherwise
+    uint64_t maxblockspersession = 32; //Default to key update every 32 usages if the user does not specify otherwise
     if (!participant_properties.empty())
     {
         for (auto it = participant_properties.begin(); it != participant_properties.end(); ++it)
@@ -187,7 +174,6 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_loc
                     use_256_bits = false;
                 }
             }
-            /*
             if ((it)->name().compare("dds.sec.crypto.maxblockspersession") == 0)
             {
                 try
@@ -202,7 +188,6 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_loc
                 {
                 }
             }
-            */
         }//endfor
     }//endif
 
@@ -240,14 +225,13 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_loc
     return std::static_pointer_cast<ParticipantCryptoHandle>(PCrypto);
 }
 
-std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_matched_remote_participant(
+std::shared_ptr<ParticipantCryptoHandle> AESGCMGMAC_KeyFactory::register_matched_remote_participant(
         const ParticipantCryptoHandle& local_participant_crypto_handle,
         const IdentityHandle& /*remote_participant_identity*/,
         const PermissionsHandle& /*remote_participant_permissions*/,
         const SecretHandle& shared_secret,
         SecurityException& exception)
 {
-    
     //Extract information from the handshake. It will be needed in order to compute KeyMaterials
     const std::vector<uint8_t>* challenge_1 = SharedSecretHelper::find_data_value(shared_secret, "Challenge1");
     const std::vector<uint8_t>* shared_secret_ss = SharedSecretHelper::find_data_value(shared_secret, "SharedSecret");
@@ -263,20 +247,20 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_mat
     // ParticipantKxKeyMaterial (based on the SharedSecret)
     // Put both elements in the local and remote ParticipantCryptoHandle
 
-    const AESGCMGMACFAST_ParticipantCryptoHandle& local_participant_handle =
-            AESGCMGMACFAST_ParticipantCryptoHandle::narrow(local_participant_crypto_handle);
+    const AESGCMGMAC_ParticipantCryptoHandle& local_participant_handle =
+            AESGCMGMAC_ParticipantCryptoHandle::narrow(local_participant_crypto_handle);
 
     auto plugin_attrs = local_participant_handle->ParticipantPluginAttributes;
     bool is_origin_auth =
             (plugin_attrs & PLUGIN_PARTICIPANT_SECURITY_ATTRIBUTES_FLAG_IS_RTPS_ORIGIN_AUTHENTICATED) != 0;
 
     // Remote Participant CryptoHandle, to be returned at the end of the function
-    std::shared_ptr<AESGCMGMACFAST_ParticipantCryptoHandle> RPCrypto;
+    std::shared_ptr<AESGCMGMAC_ParticipantCryptoHandle> RPCrypto;
 
     // generate the and populate the handle
     {
-        auto ih = new AESGCMGMACFAST_ParticipantCryptoHandle();
-        RPCrypto = std::shared_ptr<AESGCMGMACFAST_ParticipantCryptoHandle>(ih, ParticipantCryptoHandleDeleter_FAST(*this));
+        auto ih = new AESGCMGMAC_ParticipantCryptoHandle();
+        RPCrypto = std::shared_ptr<AESGCMGMAC_ParticipantCryptoHandle>(ih, ParticipantCryptoHandleDeleter(*this));
     }
 
     (*RPCrypto)->ParticipantPluginAttributes = plugin_attrs;
@@ -328,7 +312,6 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_mat
         }
 
 
-
         (*RPCrypto)->max_blocks_per_session = local_participant_handle->max_blocks_per_session;
         (*RPCrypto)->Session.session_block_counter = local_participant_handle->max_blocks_per_session + 1;
         (*RPCrypto)->Session.session_id = (std::numeric_limits<uint32_t>::max)();
@@ -341,7 +324,7 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_mat
         (*RPCrypto)->Participant2ParticipantKxKeyMaterial.push_back(buffer);
 
         // Create builtin key exchange writer handle
-        auto wHandle = std::dynamic_pointer_cast<AESGCMGMACFAST_WriterCryptoHandleImpl>(get_datawriter_handle());
+        auto wHandle = std::dynamic_pointer_cast<AESGCMGMAC_WriterCryptoHandle>(get_datawriter_handle());
         (*wHandle)->EndpointPluginAttributes = PLUGIN_ENDPOINT_SECURITY_ATTRIBUTES_FLAG_IS_SUBMESSAGE_ENCRYPTED;
         (*wHandle)->Participant_master_key_id = c_transformKeyIdZero;
         (*wHandle)->Parent_participant = std::weak_ptr<ParticipantCryptoHandle>(RPCrypto);
@@ -351,12 +334,10 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_mat
         (*wHandle)->Sessions[0].session_id = (*RPCrypto)->Session.session_id;
         (*wHandle)->max_blocks_per_session = (*RPCrypto)->max_blocks_per_session;
         (*wHandle)->Sessions[0].session_block_counter = (*RPCrypto)->Session.session_block_counter;
-
-
         (*RPCrypto)->Writers.push_back(wHandle);
 
         // Create builtin key exchange reader handle
-        auto rHandle = std::dynamic_pointer_cast<AESGCMGMACFAST_ReaderCryptoHandle>(get_datareader_handle());
+        auto rHandle = std::dynamic_pointer_cast<AESGCMGMAC_ReaderCryptoHandle>(get_datareader_handle());
         (*rHandle)->EndpointPluginAttributes = PLUGIN_ENDPOINT_SECURITY_ATTRIBUTES_FLAG_IS_SUBMESSAGE_ENCRYPTED;
         (*rHandle)->Participant_master_key_id = c_transformKeyIdZero;
         (*rHandle)->Parent_participant = std::weak_ptr<ParticipantCryptoHandle>(RPCrypto);
@@ -372,14 +353,14 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_mat
     return std::static_pointer_cast<ParticipantCryptoHandle>(RPCrypto);
 }
 
-DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datawriter(
+DatawriterCryptoHandle* AESGCMGMAC_KeyFactory::register_local_datawriter(
         ParticipantCryptoHandle& participant_crypto,
         const PropertySeq& datawriter_prop,
         const EndpointSecurityAttributes& datawriter_security_properties,
         SecurityException& /*exception*/)
 {
-    AESGCMGMACFAST_ParticipantCryptoHandle& participant_handle =
-            AESGCMGMACFAST_ParticipantCryptoHandle::narrow(participant_crypto);
+    AESGCMGMAC_ParticipantCryptoHandle& participant_handle =
+            AESGCMGMAC_ParticipantCryptoHandle::narrow(participant_crypto);
 
     if (participant_handle.nil())
     {
@@ -392,7 +373,7 @@ DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datawriter(
     bool is_payload_encrypted = (plugin_attrs & PLUGIN_ENDPOINT_SECURITY_ATTRIBUTES_FLAG_IS_PAYLOAD_ENCRYPTED) != 0;
     bool use_256_bits = true;
     bool use_kx_keys = false;
-    uint64_t maxblockspersession = 800; //Default to key update every 32 usages
+    uint64_t maxblockspersession = 32; //Default to key update every 32 usages
     if (!datawriter_prop.empty())
     {
         for (auto it = datawriter_prop.begin(); it != datawriter_prop.end(); ++it)
@@ -433,9 +414,8 @@ DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datawriter(
         return participant_handle->Writers.at(0).get();
     }
 
-
     //Create ParticipantCryptoHandle, fill Participant KeyMaterial and return it
-    auto WCrypto = std::dynamic_pointer_cast<AESGCMGMACFAST_WriterCryptoHandleImpl>(get_datawriter_handle());
+    auto WCrypto = std::dynamic_pointer_cast<AESGCMGMAC_WriterCryptoHandle>(get_datawriter_handle());
     (*WCrypto)->EndpointPluginAttributes = plugin_attrs;
 
     auto session = &(*WCrypto)->Sessions[0];
@@ -461,8 +441,6 @@ DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datawriter(
             (*WCrypto)->EntityKeyMaterial.push_back(buffer);
             session->session_block_counter = maxblockspersession + 1; //Set to update upon first usage
             RAND_bytes((unsigned char*)(&(session->session_id)), sizeof(uint32_t));
-            session->payload_encrypt = true;
-
         }
     }
 
@@ -481,7 +459,7 @@ DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datawriter(
     return WCrypto.get();
 }
 
-DatareaderCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_datareader(
+DatareaderCryptoHandle* AESGCMGMAC_KeyFactory::register_matched_remote_datareader(
         DatawriterCryptoHandle& local_datawriter_crypto_handle,
         ParticipantCryptoHandle& remote_participant_crypto,
         const SecretHandle& /*shared_secret*/,
@@ -492,8 +470,8 @@ DatareaderCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_datar
     //ParticipantKxKeyMaterial (based on the SharedSecret)
     //Put both elements in the local and remote ParticipantCryptoHandle
 
-    AESGCMGMACFAST_WriterCryptoHandleImpl& local_writer_handle =
-            AESGCMGMACFAST_WriterCryptoHandleImpl::narrow(local_datawriter_crypto_handle);
+    AESGCMGMAC_WriterCryptoHandle& local_writer_handle =
+            AESGCMGMAC_WriterCryptoHandle::narrow(local_datawriter_crypto_handle);
 
     if (local_writer_handle.nil())
     {
@@ -501,9 +479,8 @@ DatareaderCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_datar
         return nullptr;
     }
 
-
-    AESGCMGMACFAST_ParticipantCryptoHandle& remote_participant =
-            AESGCMGMACFAST_ParticipantCryptoHandle::narrow(remote_participant_crypto);
+    AESGCMGMAC_ParticipantCryptoHandle& remote_participant =
+            AESGCMGMAC_ParticipantCryptoHandle::narrow(remote_participant_crypto);
 
     std::unique_lock<std::mutex> writer_lock(local_writer_handle->mutex_);
     auto plugin_attrs = local_writer_handle->EndpointPluginAttributes;
@@ -511,7 +488,7 @@ DatareaderCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_datar
             (plugin_attrs & PLUGIN_ENDPOINT_SECURITY_ATTRIBUTES_FLAG_IS_SUBMESSAGE_ORIGIN_AUTHENTICATED) != 0;
 
     // Remote Reader CryptoHandle, to be returned at the end of the function
-    auto RRCrypto = std::dynamic_pointer_cast<AESGCMGMACFAST_ReaderCryptoHandle>(get_datareader_handle());
+    auto RRCrypto = std::dynamic_pointer_cast<AESGCMGMAC_ReaderCryptoHandle>(get_datareader_handle());
 
     (*RRCrypto)->EndpointPluginAttributes = plugin_attrs;
     (*RRCrypto)->Participant_master_key_id = local_writer_handle->Participant_master_key_id;
@@ -599,14 +576,14 @@ DatareaderCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_datar
     return RRCrypto.get();
 }
 
-DatareaderCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datareader(
+DatareaderCryptoHandle* AESGCMGMAC_KeyFactory::register_local_datareader(
         ParticipantCryptoHandle& participant_crypto,
         const PropertySeq& datareader_properties,
         const EndpointSecurityAttributes& datareder_security_attributes,
         SecurityException& /*exception*/)
 {
-    AESGCMGMACFAST_ParticipantCryptoHandle& participant_handle =
-            AESGCMGMACFAST_ParticipantCryptoHandle::narrow(participant_crypto);
+    AESGCMGMAC_ParticipantCryptoHandle& participant_handle =
+            AESGCMGMAC_ParticipantCryptoHandle::narrow(participant_crypto);
 
     if (participant_handle.nil())
     {
@@ -618,7 +595,7 @@ DatareaderCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datareader(
     bool is_sub_encrypted = (plugin_attrs & PLUGIN_ENDPOINT_SECURITY_ATTRIBUTES_FLAG_IS_SUBMESSAGE_ENCRYPTED) != 0;
     bool use_256_bits = true;
     bool use_kx_keys = false;
-    uint64_t maxblockspersession = 800; //Default to key update every 32 usages
+    uint64_t maxblockspersession = 32; //Default to key update every 32 usages
     if (!datareader_properties.empty())
     {
         for (auto it = datareader_properties.begin(); it != datareader_properties.end(); ++it)
@@ -659,9 +636,8 @@ DatareaderCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datareader(
         return participant_handle->Readers.at(0).get();
     }
 
-
     //Create ParticipantCryptoHandle, fill Participant KeyMaterial and return it
-    auto RCrypto = std::dynamic_pointer_cast<AESGCMGMACFAST_ReaderCryptoHandle>(get_datareader_handle());
+    auto RCrypto = std::dynamic_pointer_cast<AESGCMGMAC_ReaderCryptoHandle>(get_datareader_handle());
     (*RCrypto)->EndpointPluginAttributes = plugin_attrs;
 
     {
@@ -687,7 +663,7 @@ DatareaderCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datareader(
     return RCrypto.get();
 }
 
-DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_datawriter(
+DatawriterCryptoHandle* AESGCMGMAC_KeyFactory::register_matched_remote_datawriter(
         DatareaderCryptoHandle& local_datareader_crypto_handle,
         ParticipantCryptoHandle& remote_participant_crypt,
         const SecretHandle& /*shared_secret*/,
@@ -697,8 +673,8 @@ DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_dataw
     //ParticipantKxKeyMaterial (based on the SharedSecret)
     //Put both elements in the local and remote ParticipantCryptoHandle
 
-    AESGCMGMACFAST_ReaderCryptoHandleImpl& local_reader_handle =
-            AESGCMGMACFAST_ReaderCryptoHandleImpl::narrow(local_datareader_crypto_handle);
+    AESGCMGMAC_ReaderCryptoHandle& local_reader_handle =
+            AESGCMGMAC_ReaderCryptoHandle::narrow(local_datareader_crypto_handle);
 
     if (local_reader_handle.nil())
     {
@@ -706,9 +682,8 @@ DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_dataw
         return nullptr;
     }
 
-
-    AESGCMGMACFAST_ParticipantCryptoHandle& remote_participant =
-            AESGCMGMACFAST_ParticipantCryptoHandle::narrow(remote_participant_crypt);
+    AESGCMGMAC_ParticipantCryptoHandle& remote_participant =
+            AESGCMGMAC_ParticipantCryptoHandle::narrow(remote_participant_crypt);
 
     std::unique_lock<std::mutex> reader_lock(local_reader_handle->mutex_);
     auto plugin_attrs = local_reader_handle->EndpointPluginAttributes;
@@ -716,7 +691,7 @@ DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_dataw
             (plugin_attrs & PLUGIN_ENDPOINT_SECURITY_ATTRIBUTES_FLAG_IS_SUBMESSAGE_ORIGIN_AUTHENTICATED) != 0;
 
     // Remote Writer CryptoHandle, to be returned at the end of the function
-    auto RWCrypto = std::dynamic_pointer_cast<AESGCMGMACFAST_WriterCryptoHandleImpl>(get_datawriter_handle());
+    auto RWCrypto = std::dynamic_pointer_cast<AESGCMGMAC_WriterCryptoHandle>(get_datawriter_handle());
 
     (*RWCrypto)->Participant_master_key_id = local_reader_handle->Participant_master_key_id;
     (*RWCrypto)->EndpointPluginAttributes = local_reader_handle->EndpointPluginAttributes;
@@ -752,7 +727,6 @@ DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_dataw
         {
             local_reader_handle->Entity2RemoteKeyMaterial.push_back(buffer);
         }
-
     }
 
     (*RWCrypto)->max_blocks_per_session = local_reader_handle->max_blocks_per_session;
@@ -780,8 +754,8 @@ DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_matched_remote_dataw
     return RWCrypto.get();
 }
 
-void AESGCMGMACFAST_KeyFactory::release_participant(
-        AESGCMGMACFAST_ParticipantCryptoHandle& key)
+void AESGCMGMAC_KeyFactory::release_participant(
+        AESGCMGMAC_ParticipantCryptoHandle& key)
 {
     using namespace std;
 
@@ -830,7 +804,7 @@ void AESGCMGMACFAST_KeyFactory::release_participant(
     delete (&key);
 }
 
-bool AESGCMGMACFAST_KeyFactory::unregister_participant(
+bool AESGCMGMAC_KeyFactory::unregister_participant(
         std::shared_ptr<ParticipantCryptoHandle>& participant_crypto_handle,
         SecurityException& exception)
 {
@@ -840,8 +814,8 @@ bool AESGCMGMACFAST_KeyFactory::unregister_participant(
     }
 
     // Associate the exception object
-    AESGCMGMACFAST_ParticipantCryptoHandle& handle =
-            AESGCMGMACFAST_ParticipantCryptoHandle::narrow(*participant_crypto_handle);
+    AESGCMGMAC_ParticipantCryptoHandle& handle =
+            AESGCMGMAC_ParticipantCryptoHandle::narrow(*participant_crypto_handle);
 
     // must not be nil and deleter_ associated on construction
     assert(nullptr == handle->exception_);
@@ -860,62 +834,38 @@ bool AESGCMGMACFAST_KeyFactory::unregister_participant(
 
     return true;
 }
-/*
-std::shared_ptr<DatawriterCryptoHandle> AESGCMGMACFAST_KeyFactory::get_datawriter_handle()
-{
-    // Deleter should be enforced because AESGCMGMACFAST_WriterCryptoHandle can only be created/destroyed from this factory
-    return std::dynamic_pointer_cast<DatawriterCryptoHandle>(
-        std::shared_ptr<AESGCMGMACFAST_WriterCryptoHandle>(
-            new AESGCMGMACFAST_WriterCryptoHandle,
-            [](AESGCMGMACFAST_WriterCryptoHandle* p)
-            {
-                delete p;
-            }
-            ));
-}
-*/
-std::shared_ptr<DatawriterCryptoHandle> AESGCMGMACFAST_KeyFactory::get_datawriter_handle(){
-    return std::dynamic_pointer_cast<DatawriterCryptoHandle>(
-                std::shared_ptr<AESGCMGMACFAST_WriterCryptoHandle>(
-                        new AESGCMGMACFAST_WriterCryptoHandleImpl,
-                        [](AESGCMGMACFAST_WriterCryptoHandle* p){
-                            delete p;
-                        }
-                    )
-            );
-}
 
-/*
-std::shared_ptr<DatareaderCryptoHandle> AESGCMGMACFAST_KeyFactory::get_datareader_handle()
+std::shared_ptr<DatawriterCryptoHandle> AESGCMGMAC_KeyFactory::get_datawriter_handle()
 {
-    // Deleter should be enforced because AESGCMGMACFAST_ReaderCryptoHandle can only be created/destroyed from this factory
-    return std::dynamic_pointer_cast<DatareaderCryptoHandle>(
-        std::shared_ptr<AESGCMGMACFAST_ReaderCryptoHandle>(
-            new AESGCMGMACFAST_ReaderCryptoHandle,
-            [](AESGCMGMACFAST_ReaderCryptoHandle* p)
-            {
-                delete p;
-            }
-            ));
-}
-*/
-std::shared_ptr<DatareaderCryptoHandle> AESGCMGMACFAST_KeyFactory::get_datareader_handle()
-{
-    return std::dynamic_pointer_cast<DatareaderCryptoHandle>(
-        std::shared_ptr<AESGCMGMACFAST_ReaderCryptoHandle>(
-            new AESGCMGMACFAST_ReaderCryptoHandleImpl,
-            [](AESGCMGMACFAST_ReaderCryptoHandle* p)
+    // Deleter should be enforced because AESGCMGMAC_WriterCryptoHandle can only be created/destroyed from this factory
+    return std::dynamic_pointer_cast<DatawriterCryptoHandle>(
+        std::shared_ptr<AESGCMGMAC_WriterCryptoHandle>(
+            new AESGCMGMAC_WriterCryptoHandle,
+            [](AESGCMGMAC_WriterCryptoHandle* p)
             {
                 delete p;
             }
             ));
 }
 
-bool AESGCMGMACFAST_KeyFactory::unregister_datawriter(
+std::shared_ptr<DatareaderCryptoHandle> AESGCMGMAC_KeyFactory::get_datareader_handle()
+{
+    // Deleter should be enforced because AESGCMGMAC_ReaderCryptoHandle can only be created/destroyed from this factory
+    return std::dynamic_pointer_cast<DatareaderCryptoHandle>(
+        std::shared_ptr<AESGCMGMAC_ReaderCryptoHandle>(
+            new AESGCMGMAC_ReaderCryptoHandle,
+            [](AESGCMGMAC_ReaderCryptoHandle* p)
+            {
+                delete p;
+            }
+            ));
+}
+
+bool AESGCMGMAC_KeyFactory::unregister_datawriter(
         std::shared_ptr<DatawriterCryptoHandle>& datawriter_crypto_handle,
         SecurityException& exception)
 {
-    auto datawriter = std::dynamic_pointer_cast<AESGCMGMACFAST_WriterCryptoHandle>(datawriter_crypto_handle);
+    auto datawriter = std::dynamic_pointer_cast<AESGCMGMAC_WriterCryptoHandle>(datawriter_crypto_handle);
 
     if (!datawriter)
     {
@@ -925,7 +875,7 @@ bool AESGCMGMACFAST_KeyFactory::unregister_datawriter(
 
     // on participant handle destruction no lock can be taken
     // this code manages removal during participant lifetime
-    auto parent_participant = std::dynamic_pointer_cast<AESGCMGMACFAST_ParticipantCryptoHandle>(
+    auto parent_participant = std::dynamic_pointer_cast<AESGCMGMAC_ParticipantCryptoHandle>(
         (*datawriter)->Parent_participant.lock());
 
     if (parent_participant)
@@ -950,11 +900,11 @@ bool AESGCMGMACFAST_KeyFactory::unregister_datawriter(
     return true;
 }
 
-bool AESGCMGMACFAST_KeyFactory::unregister_datareader(
+bool AESGCMGMAC_KeyFactory::unregister_datareader(
         std::shared_ptr<DatareaderCryptoHandle>& datareader_crypto_handle,
         SecurityException& exception)
 {
-    auto datareader = std::dynamic_pointer_cast<AESGCMGMACFAST_ReaderCryptoHandle>(datareader_crypto_handle);
+    auto datareader = std::dynamic_pointer_cast<AESGCMGMAC_ReaderCryptoHandle>(datareader_crypto_handle);
 
     if (!datareader)
     {
@@ -964,7 +914,7 @@ bool AESGCMGMACFAST_KeyFactory::unregister_datareader(
 
     // on participant handle destruction no lock can be taken
     // this code manages removal during participant lifetime
-    auto parent_participant = std::dynamic_pointer_cast<AESGCMGMACFAST_ParticipantCryptoHandle>(
+    auto parent_participant = std::dynamic_pointer_cast<AESGCMGMAC_ParticipantCryptoHandle>(
         (*datareader)->Parent_participant.lock());
 
     if (parent_participant)
@@ -989,7 +939,7 @@ bool AESGCMGMACFAST_KeyFactory::unregister_datareader(
     return true;
 }
 
-void AESGCMGMACFAST_KeyFactory::create_key(
+void AESGCMGMAC_KeyFactory::create_key(
         KeyMaterial_AES_GCM_GMAC& key,
         bool encrypt_then_sign,
         bool use_256_bits)
@@ -1017,7 +967,7 @@ void AESGCMGMACFAST_KeyFactory::create_key(
     key.master_receiver_specific_key.fill(0);
 }
 
-CryptoTransformKeyId AESGCMGMACFAST_KeyFactory::make_unique_KeyId()
+CryptoTransformKeyId AESGCMGMAC_KeyFactory::make_unique_KeyId()
 {
     CryptoTransformKeyId buffer{{0, 0, 0, 0}};
     bool unique = false;
@@ -1035,7 +985,7 @@ CryptoTransformKeyId AESGCMGMACFAST_KeyFactory::make_unique_KeyId()
     return buffer;
 }
 
-void AESGCMGMACFAST_KeyFactory::release_key_id(
+void AESGCMGMAC_KeyFactory::release_key_id(
         CryptoTransformKeyId key)
 {
     std::vector<CryptoTransformKeyId>::iterator it;
