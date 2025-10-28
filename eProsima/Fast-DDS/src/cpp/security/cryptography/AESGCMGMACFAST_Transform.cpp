@@ -134,7 +134,7 @@ static KeyMaterial_AES_GCM_GMAC* find_key(
 void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_WriterCryptoHandleImpl& handle,
                             eprosima::fastrtps::rtps::security::KeySessionData& session)
 {
-    //fprintf(stdout, "[%u] set for Encode precomputation\n", session.session_id);
+    // fprintf(stdout, "[%u] set for Encode precomputation\n", session.session_id);
     while(handle.e_buffer && handle.e_buffer->get_last() != MAX_ROUND_SIZE){
         std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_INTERVAL));
     }
@@ -197,9 +197,12 @@ void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_Writ
     handle.d_buffer = ring_buffer;
     handle.d_ctx = EVP_CIPHER_CTX_new();
     if(!handle.d_ctx){
-      //  fprintf(stderr, "Failed to create OpenSSL context in datawriter\n");
+        fprintf(stderr, "Failed to create OpenSSL context in datawriter\n");
         exit(EXIT_FAILURE);
     }
+    else
+        fprintf(stdout, "Success to create OpenSSL context in datawriter\n");
+
 
     std::array<uint8_t, 12> iv;
     memcpy(iv.data(), &sessionId, sizeof(sessionId));
@@ -278,12 +281,12 @@ bool AESGCMGMACFAST_Transform::encode_serialized_payload(
         //if(-1 > session->session_id || session->session_id > 20){
        // if(guid == 2147483651){
       //      fprintf(stdout, "Encode Writer Precomputation [Session %u]\n", session->session_id);
-        if(payload.length != 448 && payload.length != 444) 
+        if(payload.length == 64588) 
             set_for_writer_precomputation(impl_writer, *session);
        // }
     }
 
-    if(payload.length != 448 && payload.length != 444 &&!impl_writer.e_buffer) 
+    if(payload.length == 64588 &&!impl_writer.e_buffer) 
         set_for_writer_precomputation(impl_writer, *session);
     //In any case, increment session block counte0r
     session->session_block_counter += 1;
@@ -1185,6 +1188,7 @@ bool AESGCMGMACFAST_Transform::decode_datawriter_submessage(
 {
     auto& impl_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow(sending_datawriter_cryupto);
     auto& sending_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow_base(sending_datawriter_cryupto);
+    //fprintf(stdout, "decode submessage checkpoint 1\n");
            
 
     if (sending_writer.nil())
@@ -1633,11 +1637,13 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
     std::array<uint8_t, 32> session_key{};
     //if(-1 < session_id && session_id < 20)
     compute_sessionkey(session_key, *keyMat, session_id);
-    if(encoded_payload.length != 492 && encoded_payload.length != 488 && !impl_writer.d_buffer) 
+    //fprintf(stdout, "encoded payload length : %d\n", encoded_payload.length);
+    if((encoded_payload.length == 32 || encoded_payload.length == 8844 || encoded_payload.length == 64632) && !impl_writer.d_buffer) 
     {
         //if(guid == 2147483651){
           //  fprintf(stdout, "Decode Writer Precomputation [Session %u]\n", session_id);
-      //      fprintf(stdout, "encode payalod.length %d]\n", encoded_payload.length);
+            fprintf(stdout, "encode payalod.length %d]\n", encoded_payload.length);
+
             set_for_writer_precomputation(impl_writer, session_key, session_id);
        // }
     }
@@ -1794,10 +1800,12 @@ void AESGCMGMACFAST_Transform::serialize_SecureDataHeader(
 {
     serializer << transformation_kind << transformation_key_id << session_id << initialization_vector_suffix;
 
+    /*
     debug_print(EHEADER, "transformation_kind", transformation_kind);
     debug_print(EHEADER, "transformation_key_id", transformation_key_id);
     debug_print(EHEADER, "session_id", session_id);
     debug_print(EHEADER, "initialization_vector_suffix", initialization_vector_suffix);
+    */
 
 }
 
@@ -1992,7 +2000,7 @@ bool AESGCMGMACFAST_Transform::serialize_SecureDataBody(
                     initialization_vector.data()))
         {
             logError(SECURITY_CRYPTO, "Unable to encode the payload. EVP_EncryptInit function returns an error");
-            EVP_CIPHER_CTX_free(e_ctx);
+            // EVP_CIPHER_CTX_free(e_ctx);
             return false;
         }
 
@@ -2377,10 +2385,12 @@ SecureDataHeader AESGCMGMACFAST_Transform::deserialize_SecureDataHeader(
     decoder >> header.transform_identifier.transformation_kind >> header.transform_identifier.transformation_key_id >>
         header.session_id >> header.initialization_vector_suffix;
 
+    /*
     debug_print(DHEADER, "transformation_kind", header.transform_identifier.transformation_kind);
     debug_print(DHEADER, "transformation_key_id", header.transform_identifier.transformation_key_id);
     debug_print(DHEADER, "session_id", header.session_id);
     debug_print(DHEADER, "initialization_vector_suffix", header.initialization_vector_suffix);
+    */
 
     return header;
 }
@@ -2446,7 +2456,7 @@ bool AESGCMGMACFAST_Transform::deserialize_SecureDataBody_precomputation(
     if (!EVP_DecryptFinal(ctx, output_buffer ? &output_buffer[actual_size] : NULL, &final_size))
     {
         logWarning(SECURITY_CRYPTO, "Unable to decode the payload. EVP_DecryptFinal function returns an error");
-        EVP_CIPHER_CTX_free(ctx);
+        // EVP_CIPHER_CTX_free(ctx);
         return false;
     }
 
