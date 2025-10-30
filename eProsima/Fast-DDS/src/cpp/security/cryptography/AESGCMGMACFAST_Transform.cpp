@@ -200,9 +200,6 @@ void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_Writ
         fprintf(stderr, "Failed to create OpenSSL context in datawriter\n");
         exit(EXIT_FAILURE);
     }
-    else
-        fprintf(stdout, "Success to create OpenSSL context in datawriter\n");
-
 
     std::array<uint8_t, 12> iv;
     memcpy(iv.data(), &sessionId, sizeof(sessionId));
@@ -281,12 +278,13 @@ bool AESGCMGMACFAST_Transform::encode_serialized_payload(
         //if(-1 > session->session_id || session->session_id > 20){
        // if(guid == 2147483651){
       //      fprintf(stdout, "Encode Writer Precomputation [Session %u]\n", session->session_id);
-        if(payload.length == 64588) 
+        //if(payload.length == 64588) 
             set_for_writer_precomputation(impl_writer, *session);
        // }
     }
 
-    if(payload.length == 64588 &&!impl_writer.e_buffer) 
+    //if(payload.length == 64588 &&!impl_writer.e_buffer) 
+    if(!impl_writer.e_buffer) 
         set_for_writer_precomputation(impl_writer, *session);
     //In any case, increment session block counte0r
     session->session_block_counter += 1;
@@ -1638,16 +1636,7 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
     //if(-1 < session_id && session_id < 20)
     compute_sessionkey(session_key, *keyMat, session_id);
     //fprintf(stdout, "encoded payload length : %d\n", encoded_payload.length);
-    if((encoded_payload.length == 32 || encoded_payload.length == 8844 || encoded_payload.length == 64632) && !impl_writer.d_buffer) 
-    {
-        //if(guid == 2147483651){
-          //  fprintf(stdout, "Decode Writer Precomputation [Session %u]\n", session_id);
-            fprintf(stdout, "encode payalod.length %d]\n", encoded_payload.length);
-
-            set_for_writer_precomputation(impl_writer, session_key, session_id);
-       // }
-    }
-
+    
     //IV
     std::array<uint8_t, 12> initialization_vector{};
     memcpy(initialization_vector.data(), header.session_id.data(), 4);
@@ -1670,6 +1659,16 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
         if (is_encrypted)
         {
             decoder.deserialize(body_length, eprosima::fastcdr::Cdr::Endianness::BIG_ENDIANNESS);
+            //if((body_length == 32 || body_length == 8800 || body_length == 64632) && !impl_writer.d_buffer) 
+            if(!impl_writer.d_buffer) 
+            //if((body_length == 8800 || body_length == 64632) && !impl_writer.d_buffer) 
+            {
+                //if(guid == 2147483651){
+                //  fprintf(stdout, "Decode Writer Precomputation [Session %u]\n", session_id);
+
+                set_for_writer_precomputation(impl_writer, session_key, session_id);
+                // }
+            }
         }
         else
         {

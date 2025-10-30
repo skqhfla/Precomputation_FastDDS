@@ -36,16 +36,16 @@ struct CircularBuffer{
 
     CircularBuffer(uint32_t session_id, bool type) : head(0), tail(0), stop_round(false), last(MAX_ROUND_SIZE) {
         session.store(session_id, std::memory_order_release);
-
+/*
         auto now = std::chrono::system_clock::now();
         auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now.time_since_epoch()).count();
 
-        /*
         std::string t = (type) ? "encrypt" : "decrypt";
         std::string filename = "/home/user/" + t + "_ring_buffer_" + std::to_string(session_id) + "_" + std::to_string(millis) + ".log";
         log.open(filename, std::ios::app);
-
+*/
+/*
   //      std::string filename_key = "/home/user/" + t + "_keystream_" + std::to_string(session_id) + "_" + std::to_string(millis) + ".log";
   //      log_key.open(filename_key, std::ios::app);
   */
@@ -117,8 +117,8 @@ struct CircularBuffer{
                     break;
                 }
                 //borim
-                // size_t cur_chunk = std::min(static_cast<size_t>(CHUNK_SIZE), KEYSTREAM_SIZE - i);
-                size_t cur_chunk = CHUNK_SIZE;
+                 size_t cur_chunk = std::min(static_cast<size_t>(CHUNK_SIZE), KEYSTREAM_SIZE - i);
+                //size_t cur_chunk = CHUNK_SIZE;
 
                 int h = head.load(std::memory_order_acquire);
                 int t = tail.load(std::memory_order_acquire);
@@ -163,11 +163,6 @@ struct CircularBuffer{
         //log <<"==== h : " << h << " | new_head : " << new_head << " | tail : " << t << std::endl;   
         //log <<"--- remain_size : " << BUFFER_SIZE - remain_size() << " | shift " << shift << " --- " << std::endl;
 
-        while(stop_round.load()){
-            std::this_thread::sleep_for(std::chrono::nanoseconds(WAIT_INTERVAL));
-            //log <<"*** move head wait moving tail head : " << h << " | tail : " << tail << " ***" << std::endl;
-        }
-
         if(BUFFER_SIZE - remain_size() < shift){
             //log <<"[Trigger] Overrun detected! Stop current round" << std::endl;
             head.store(new_head, std::memory_order_release);
@@ -178,6 +173,7 @@ struct CircularBuffer{
             //log <<"*** move head wait moving tail head : " << h << " / tail : " << tail << " ***" << std::endl;
             std::this_thread::sleep_for(std::chrono::nanoseconds(WAIT_INTERVAL));
         }
+            head.store(new_head, std::memory_order_release);
 
 
         //log <<"Keystream sync adjusted: head=" << new_head
@@ -188,7 +184,7 @@ struct CircularBuffer{
     unsigned char * get_keystream(int len, int block_cnt, EVP_CIPHER_CTX * ctx)
     {
         uint32_t session_id = session.load(std::memory_order_acquire);
-        //log <<"--- get_keystream : " << session_id << " | size : " << len << " | bcnt = " << block_cnt << "  ---" << std::endl;
+ //       log <<"--- get_keystream : " << session_id << " | size : " << len << " | bcnt = " << block_cnt << "  ---" << std::endl;
         //fprintf(stdout, "[%u] get keystream size : %d | bnt = %d\n", session_id, len, block_cnt);
 
         int blocks_needed = (len + AES_GCM_BLOCK_SIZE - 1) / AES_GCM_BLOCK_SIZE;
@@ -239,7 +235,7 @@ struct CircularBuffer{
 
 //        //log <<"out while" << std::endl;
         //borim
-        // move_head((KEYSTREAM_SIZE - blocks_needed));
+         move_head((KEYSTREAM_SIZE - blocks_needed));
         
         last.store(block_cnt + 1, std::memory_order_release);
 
