@@ -134,14 +134,11 @@ static KeyMaterial_AES_GCM_GMAC* find_key(
 void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_WriterCryptoHandleImpl& handle,
                             eprosima::fastrtps::rtps::security::KeySessionData& session)
 {
-   // fprintf(stdout, "[%u] set for Encode precomputation\n", session.session_id);
     while(handle.e_buffer && handle.e_buffer->get_last() != MAX_ROUND_SIZE){
         std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_INTERVAL));
     }
     handle.e_buffer.reset();
-    //fprintf(stdout, "[%u] Encode free ctx & buffer\n", session.session_id);
 
-    //fprintf(stdout, "[%u] Encode handle session\n", handle.e_session);
     memcpy(&(handle.e_session), &(session.session_id), sizeof(session.session_id));
     memcpy(&(handle.e_key), &(session.SessionKey), sizeof(session.SessionKey));
 
@@ -150,7 +147,7 @@ void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_Writ
     handle.e_buffer = ring_buffer;
     handle.e_ctx = EVP_CIPHER_CTX_new();
     if(!handle.e_ctx){
-      //  fprintf(stderr, "Failed to create OpenSSL context in datawriter\n");
+        fprintf(stderr, "Failed to create OpenSSL context in datawriter\n");
         exit(EXIT_FAILURE);
     }
 
@@ -158,20 +155,14 @@ void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_Writ
     uint32_t sid = session.session_id;
     memcpy(iv.data(), &sid, sizeof(sid));
     memset(iv.data() + 4, 0, 8);
-/*
-    fprintf(stdout, "IV : ");
-    for (int i = 0; i < 12; i++)
-        fprintf(stdout, "%02x ", iv[i]);
-    fprintf(stdout, "\n");
-*/
+
     if(!jinho_EVP_EncryptInit_ex(handle.e_ctx, EVP_aes_256_gcm(), NULL, session.SessionKey.data(), iv.data()))
     {
-  //      fprintf(stderr, "Failed to init AES-GCM with IV\n");
+        fprintf(stderr, "Failed to init AES-GCM with IV\n");
         exit(EXIT_FAILURE);
     }
 
     std::thread([ring_buffer, ctx = handle.e_ctx, sid](){
-    //    fprintf(stdout, "[%u] make thread for make keystream\n", sid);
         ring_buffer->push(ctx);
     }).detach();
 }
@@ -180,14 +171,11 @@ void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_Writ
 void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_WriterCryptoHandleImpl& handle,
                             std::array<uint8_t, 32> sessionKey, int sessionId)
 {
-    //fprintf(stdout, "[%u] set for Decode writer precomputation\n", sessionId);
     while(handle.d_buffer && handle.d_buffer->get_last() != MAX_ROUND_SIZE){
         std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_INTERVAL));
     } 
     handle.d_buffer.reset();
-   //fprintf(stdout, "[%u] Decode writer free ctx & buffer\n", sessionId);
 
-    //fprintf(stdout, "[%u] Decode handle session\n", handle.d_session);
     handle.d_session = sessionId;
     memcpy(&handle.d_session, &sessionId, sizeof(sessionId));
     memcpy(&handle.d_key, &sessionKey, sizeof(sessionKey));
@@ -204,22 +192,14 @@ void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_Writ
     std::array<uint8_t, 12> iv;
     memcpy(iv.data(), &sessionId, sizeof(sessionId));
     memset(iv.data() + 4, 0, 8);
-/*
-    fprintf(stdout, "IV : ");
-    for (int i = 0; i < 12; i++)
-        fprintf(stdout, "%02x ", iv[i]);
-    fprintf(stdout, "\n");
-*/
-    
 
     if(!jinho_EVP_DecryptInit_ex(handle.d_ctx, EVP_aes_256_gcm(), NULL, sessionKey.data(), iv.data()))
     {
-  //      fprintf(stderr, "Failed to init AES-GCM with IV\n");
+        fprintf(stderr, "Failed to init AES-GCM with IV\n");
         exit(EXIT_FAILURE);
     }
 
     std::thread([ring_buffer, ctx = handle.d_ctx, sessionId](){
-    //    fprintf(stdout, "[%u] make thread for make keystream\n", sessionId);
         ring_buffer->push(ctx);
     }).detach();
 }
@@ -273,19 +253,13 @@ bool AESGCMGMACFAST_Transform::encode_serialized_payload(
 
         compute_sessionkey(session->SessionKey, keyMat, session->session_id);
 
-        //fprintf(stdout, "[%u] encode payload / counter : %u\n", session->session_id, session->payload_block_counter);
         //ReceiverSpecific keys shall be computed specifically when needed
         session->session_block_counter = 0;
         session->payload_block_counter = 0;
         if(impl_writer.e_buffer)
             impl_writer.e_buffer->set_last(MAX_ROUND_SIZE);
 
-        //if(-1 > session->session_id || session->session_id > 20){
-       // if(guid == 2147483651){
-      //      fprintf(stdout, "Encode Writer Precomputation [Session %u]\n", session->session_id);
-        //if(payload.length == 64588) 
             set_for_writer_precomputation(impl_writer, *session);
-       // }
     }
 
     //if(payload.length == 64588 &&!impl_writer.e_buffer) 
@@ -299,7 +273,6 @@ bool AESGCMGMACFAST_Transform::encode_serialized_payload(
     session->session_block_counter += 1;
     session->payload_block_counter += 1;
 
-    //fprintf(stdout, "[%u] encode counter : %u\n", session->session_id, session->payload_block_counter);
     auto iv_suffix = build_iv_suffix(session);
 
     std::array<uint8_t, 12> initialization_vector; //96 bytes, session_id + suffix
@@ -307,12 +280,6 @@ bool AESGCMGMACFAST_Transform::encode_serialized_payload(
     memcpy(initialization_vector.data() + 4, iv_suffix.data(), 8);
     std::array<uint8_t, 4> session_id;
     memcpy(session_id.data(), &(session->session_id), 4);
-/*
-    fprintf(stdout, "[ID = %u | bcnt = ", session->session_id);
-    for(auto byte : iv_suffix)
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << " ";
-    fprintf(stdout, "] encode serialized payload\n");
-*/
     //Header
     try
     {
@@ -418,16 +385,10 @@ bool AESGCMGMACFAST_Transform::encode_datawriter_submessage(
         compute_sessionkey(session->SessionKey, keyMat, session->session_id);
 
         //ReceiverSpecific keys shall be computed specifically when needed
-        //fprintf(stdout, "[%u] encode datawriter counter : %d\n",session->session_id, session->payload_block_counter);
         session->session_block_counter = 0;
         session->payload_block_counter = 0;
         if(impl_writer.e_buffer)
             impl_writer.e_buffer->set_last(MAX_ROUND_SIZE);
-        //if(-1 > session->session_id || session->session_id > 20){
-       /* if(guid == 2147483651){
-            fprintf(stdout, "Encode Writer Precomputation [Session %u]\n", session->session_id);
-            set_for_writer_precomputation(impl_writer, *session);
-        }*/
     }
 
     session->session_block_counter += 1;
@@ -440,12 +401,7 @@ bool AESGCMGMACFAST_Transform::encode_datawriter_submessage(
     memcpy(initialization_vector.data() + 4, iv_suffix.data(), 8);
     std::array<uint8_t, 4> session_id;
     memcpy(session_id.data(), &(session->session_id), 4);
-/*
-    fprintf(stdout, "[ID = %u | bcnt = ", session->session_id);
-    for(auto byte : iv_suffix)
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << " ";
-    fprintf(stdout, "] encode datawriter submessage\n");
-*/
+
 #if FASTDDS_IS_BIG_ENDIAN_TARGET
     octet flags = 0x0;
     serializer.changeEndianness(eprosima::fastcdr::Cdr::Endianness::BIG_ENDIANNESS);
@@ -722,7 +678,6 @@ bool AESGCMGMACFAST_Transform::encode_rtps_message(
         //Insert outdate session_id values in all RemoteParticipant trackers to trigger a SessionkeyUpdate
     }
 
-    //fprintf(stdout, "[%u] encode rtps submessage\n", local_participant->Session.session_id);
     local_participant->Session.session_block_counter += 1;
 
     auto iv_suffix = build_iv_suffix(&(local_participant->Session));
@@ -1199,7 +1154,6 @@ bool AESGCMGMACFAST_Transform::decode_datawriter_submessage(
 {
     auto& impl_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow(sending_datawriter_cryupto);
     auto& sending_writer = AESGCMGMACFAST_WriterCryptoHandle::narrow_base(sending_datawriter_cryupto);
-    //fprintf(stdout, "decode submessage checkpoint 1\n");
            
 
     if (sending_writer.nil())
@@ -1279,29 +1233,10 @@ bool AESGCMGMACFAST_Transform::decode_datawriter_submessage(
 
     int session_id;
     memcpy(&session_id, header.session_id.data(), 4);
-/*
-    if(impl_writer.d_session != 0 && impl_writer.d_session < session_id){
-        if(impl_writer.d_buffer){
-           fprintf(stdout, "[%u] decode datawrtier change session\n", session_id);
-           impl_writer.d_buffer->set_last(MAX_ROUND_SIZE); 
-        }
-    }
- */   
 
     //Sessionkey
     std::array<uint8_t, 32> session_key{};
-    //fprintf(stdout, "---------- check impl Writer [%d]----------\n", impl_writer.d_session);
-    //if(!impl_writer.d_buffer){
-        compute_sessionkey(session_key, *keyMat, session_id);
-        //if(-1 > session_id || session_id > 20){
-        /*if(guid == 2147483651){
-            fprintf(stdout, "Decode Writer Precomputation [Session %u]\n", session_id);
-            set_for_writer_precomputation(impl_writer, session_key, session_id);
-        }*/
-    /*}
-    else{
-        memcpy(&session_key, &impl_writer.d_key, sizeof(session_key));
-    }*/
+    compute_sessionkey(session_key, *keyMat, session_id);
 
     //IV
     std::array<uint8_t, 12> initialization_vector{};
@@ -1309,12 +1244,6 @@ bool AESGCMGMACFAST_Transform::decode_datawriter_submessage(
     memcpy(initialization_vector.data() + 4,
             header.initialization_vector_suffix.data(), initialization_vector_suffix_length);
 
-   /* 
-    fprintf(stdout, "[ID = %u | bcnt = ", session_id);
-    for(auto byte : header.initialization_vector_suffix)
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << " ";
-    fprintf(stdout, "] decode datawriter submessage\n");
-   */
     // Body
     uint32_t body_length = 0, body_align = 0;
     eprosima::fastcdr::Cdr::state protected_body_state = decoder.getState();
@@ -1649,12 +1578,9 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
 
     uint32_t session_id;
     memcpy(&session_id, header.session_id.data(), 4);
-    //fprintf(stdout, "[%u] decode serialized payload\n", session_id);
 
     //Sessionkey
     std::array<uint8_t, 32> session_key{};
-    //if(-1 < session_id && session_id < 20)
-    //fprintf(stdout, "encoded payload length : %d\n", encoded_payload.length);
     
     if(impl_writer.d_session == 0)
         memcpy(&(impl_writer.d_session), header.session_id.data(), 4);
@@ -1662,9 +1588,7 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
         compute_sessionkey(session_key, *keyMat, session_id);
 
     if(impl_writer.d_session != 0 && impl_writer.d_session < session_id){
-       // fprintf(stdout, "[%u] -> [%u]\n", impl_writer.d_session, session_id);
         if(impl_writer.d_buffer){
-         //   fprintf(stdout, "[%u] decode payload change session\n", session_id);
            impl_writer.d_buffer->set_last(MAX_ROUND_SIZE); 
         }
            set_for_writer_precomputation(impl_writer, session_key, session_id);
@@ -1679,7 +1603,6 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
     uint32_t block_counter;
     memcpy(&block_counter, header.initialization_vector_suffix.data() + 4, sizeof(block_counter)); 
 
- //   fprintf(stdout, "[%u] decode counter : %u\n", session_id, block_counter);
     // Body
     uint32_t body_length = 0, body_align = 0;
     eprosima::fastcdr::Cdr::state protected_body_state = decoder.getState();
@@ -1693,15 +1616,9 @@ bool AESGCMGMACFAST_Transform::decode_serialized_payload(
         if (is_encrypted)
         {
             decoder.deserialize(body_length, eprosima::fastcdr::Cdr::Endianness::BIG_ENDIANNESS);
-            //if((body_length == 32 || body_length == 8800 || body_length == 64632) && !impl_writer.d_buffer) 
             if(!impl_writer.d_buffer) 
-            //if((body_length == 8800 || body_length == 64632) && !impl_writer.d_buffer) 
             {
-                //if(guid == 2147483651){
-                //  fprintf(stdout, "Decode Writer Precomputation [Session %u]\n", session_id);
-
                 set_for_writer_precomputation(impl_writer, session_key, session_id);
-                // }
             }
         }
         else
@@ -1883,7 +1800,7 @@ bool AESGCMGMACFAST_Transform::serialize_SecureDataBody_precomputation(
 
         int block_cnt;
 
-        if (!borim_EVP_EncryptUpdate(ctx, NULL, &actual_size, plain_buffer, static_cast<int>(plain_buffer_len), ks, block_cnt))
+        if (!EVP_XOR(ctx, NULL, &actual_size, plain_buffer, static_cast<int>(plain_buffer_len), ks, block_cnt))
         {
             logError(SECURITY_CRYPTO, "Unable to encode the payload. EVP_EncryptUpdate function returns an error");
             EVP_CIPHER_CTX_free(ctx);
@@ -1949,10 +1866,8 @@ bool AESGCMGMACFAST_Transform::serialize_SecureDataBody_precomputation(
         int block_cnt;
 
         if(!plain_buffer || plain_buffer_len == 0){
-           // fprintf(stdout, "*** plain buffer was null, do not Encrypt ***\n");
         }
-        // JINHO: Return -1
-        else if (!borim_EVP_EncryptUpdate(ctx, output_buffer_raw, &actual_size, plain_buffer,
+        else if (!EVP_XOR(ctx, output_buffer_raw, &actual_size, plain_buffer,
                     static_cast<int>(plain_buffer_len), ks, block_cnt))
         {
             logError(SECURITY_CRYPTO, "Unable to encode the payload. EVP_EncryptUpdate function returns an error");
@@ -2442,7 +2357,6 @@ bool AESGCMGMACFAST_Transform::deserialize_SecureDataBody_precomputation(
         octet* plain_buffer,
         uint32_t& plain_buffer_len)
 {
-   // fprintf(stdout, "deserialize_SecureDataBody\n");
     eprosima::fastcdr::Cdr::state current_state = decoder.getState();
     decoder.setState(body_state);
 
@@ -2473,7 +2387,7 @@ bool AESGCMGMACFAST_Transform::deserialize_SecureDataBody_precomputation(
 
     octet* output_buffer = do_encryption ? plain_buffer : nullptr;
     unsigned char* input_buffer = (unsigned char*)decoder.getCurrentPosition();
-    if (!borim_EVP_EncryptUpdate(ctx, output_buffer, &actual_size, input_buffer, protected_len, ks, block_cnt))
+    if (!EVP_XOR(ctx, output_buffer, &actual_size, input_buffer, protected_len, ks, block_cnt))
     {
         logWarning(SECURITY_CRYPTO, "Unable to decode the payload. EVP_DecryptUpdate function returns an error");
         EVP_CIPHER_CTX_free(ctx);
@@ -2484,7 +2398,6 @@ bool AESGCMGMACFAST_Transform::deserialize_SecureDataBody_precomputation(
 
 
     EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, AES_BLOCK_SIZE, tag.common_mac.data());
-   // fprintf(stdout, "---check point in decode XOR\n");
 
     if (!EVP_DecryptFinal(ctx, output_buffer ? &output_buffer[actual_size] : NULL, &final_size))
     {
