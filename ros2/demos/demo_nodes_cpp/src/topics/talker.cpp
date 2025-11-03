@@ -45,9 +45,7 @@ public:
     auto publish_message =
       [this]() -> void
       {
-          if(count_ <= 200){
             std::string data(target_length, 'A');
-//            std::string data;
             msg_ = std::make_unique<std_msgs::msg::String>();
             auto n_ = std::chrono::system_clock::now();
             auto ms = std::chrono::duration_cast<std::chrono::nanoseconds>(n_.time_since_epoch()) % 1000000000;
@@ -69,12 +67,6 @@ public:
                               << '.' << std::setfill('0') << std::setw(9) << ms.count()
                               << std::endl;
                 pub_->publish(std::move(msg_));
-
-                if(count_ == 100){
-                    std::cout << "[Talker] Total time for sending 50 messages : \n" << std::endl;
-                }
-                count_++;
-            }
       };
     rclcpp::QoS qos(rclcpp::KeepLast{7});
     pub_ = this->create_publisher<std_msgs::msg::String>("chatter", qos);
@@ -84,7 +76,6 @@ public:
   }
 
 private:
-  size_t count_ = 1;
   std::unique_ptr<std_msgs::msg::String> msg_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
   rclcpp::TimerBase::SharedPtr timer_;
