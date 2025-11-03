@@ -175,7 +175,7 @@ std::shared_ptr<ParticipantCryptoHandle> AESGCMGMACFAST_KeyFactory::register_loc
     bool is_origin_auth =
             (plugin_attrs & PLUGIN_PARTICIPANT_SECURITY_ATTRIBUTES_FLAG_IS_RTPS_ORIGIN_AUTHENTICATED) != 0;
     bool use_256_bits = true;
-    uint64_t maxblockspersession = 800; //Default to key update every 32 usages if the user does not specify otherwise
+    uint64_t maxblockspersession = MAX_COUNTER_BLOCK_SIZE; //Default to key update every 32 usages if the user does not specify otherwise
     if (!participant_properties.empty())
     {
         for (auto it = participant_properties.begin(); it != participant_properties.end(); ++it)
@@ -392,7 +392,7 @@ DatawriterCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datawriter(
     bool is_payload_encrypted = (plugin_attrs & PLUGIN_ENDPOINT_SECURITY_ATTRIBUTES_FLAG_IS_PAYLOAD_ENCRYPTED) != 0;
     bool use_256_bits = true;
     bool use_kx_keys = false;
-    uint64_t maxblockspersession = 800; //Default to key update every 32 usages
+    uint64_t maxblockspersession = MAX_COUNTER_BLOCK_SIZE; //Default to key update every 32 usages
     if (!datawriter_prop.empty())
     {
         for (auto it = datawriter_prop.begin(); it != datawriter_prop.end(); ++it)
@@ -618,7 +618,7 @@ DatareaderCryptoHandle* AESGCMGMACFAST_KeyFactory::register_local_datareader(
     bool is_sub_encrypted = (plugin_attrs & PLUGIN_ENDPOINT_SECURITY_ATTRIBUTES_FLAG_IS_SUBMESSAGE_ENCRYPTED) != 0;
     bool use_256_bits = true;
     bool use_kx_keys = false;
-    uint64_t maxblockspersession = 800; //Default to key update every 32 usages
+    uint64_t maxblockspersession = MAX_COUNTER_BLOCK_SIZE; //Default to key update every 32 usages
     if (!datareader_properties.empty())
     {
         for (auto it = datareader_properties.begin(); it != datareader_properties.end(); ++it)
