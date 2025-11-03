@@ -7,7 +7,7 @@ allowing AES-GCM encryption/decryption with pre-generated keystreams for enhance
 
 ## ⚙️ Build Instructions
 
-1️⃣ **Add** the pre-computation–enabled OpenSSL files to your existing **Fast-DDS** source.  
+1️⃣ **Add** the pre-computation–enabled Fast-DDS files to your existing **Fast-DDS** source.  
 2️⃣ **Rebuild** ROS 2:
 
 ```bash
