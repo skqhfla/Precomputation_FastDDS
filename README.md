@@ -8,10 +8,17 @@ allowing AES-GCM encryption/decryption with pre-generated keystreams for enhance
 ## ⚙️ Build Instructions
 
 1️⃣ **Add** the pre-computation–enabled OpenSSL files to your existing **Fast-DDS** source.  
-2️⃣ **Rebuild** Fast-DDS and ROS 2:
+2️⃣ **Rebuild** ROS 2:
 
 ```bash
-# Build for Fast-DDS and ROS 2
+# Build for ros humble
+
+export OPENSSL_ROOT_DIR=<FastOpenSSL_build_path>
+export OPENSSL_INCLUDE_DIR=<FastOpenSSL_build_path>/include\
+export OPENSSL_LIBRARIES=<FastOpenSSL_build_path>/lib
+export PKG_CONFIG_PATH=<FastOpenSSL_build_path>/lib/pkgconfig:$PKG_CONFIG_PATH
+export LD_LIBRARY_PATH=<FastOpenSSL_build_path>/lib:$LD_LIBRARY_PATH
+
 colcon build --cmake-args -DSECURITY=on -DOPENSSL_ROOT_DIR=<FastOpenSSL_build_path>
 ```
 
