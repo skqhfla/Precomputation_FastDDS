@@ -55,10 +55,6 @@ namespace demo_nodes_cpp
                                     "[Recv] msg_prefix: %s | recv_time: %s\n",
                                     prefix.c_str(), recv_time.c_str());
                             RCLCPP_INFO(this->get_logger(), "I heard: [%s]", msg->data.c_str());
-
-                            if(count_ == 50){
-                                std::cout << "[Listener] Total time for receiving 50 messages: " << std::endl;
-                            }
                         };
                     // Create a subscription to the topic which can be matched with one or more compatible ROS
                     // publishers.
