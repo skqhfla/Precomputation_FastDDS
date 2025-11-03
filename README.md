@@ -12,7 +12,7 @@ allowing AES-GCM encryption/decryption with pre-generated keystreams for enhance
 
 ```bash
 # Build for Fast-DDS and ROS 2
-colcon build --cmake-args -DSECURITY=on
+colcon build --cmake-args -DSECURITY=on -DOPENSSL_ROOT_DIR=$OPENSSL_ROOT_DIR 
 ```
 
 ---
