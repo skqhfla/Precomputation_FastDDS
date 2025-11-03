@@ -13,7 +13,9 @@ allowing AES-GCM encryption/decryption with pre-generated keystreams for enhance
 ```bash
 # Build for Fast-DDS and ROS 2
 colcon build --cmake-args -DSECURITY=on
+
 ---
+
 ## 🚀 Run the Sample Code
 
 Set the **ROS_DOMAIN_ID** according to the desired encryption mode:
