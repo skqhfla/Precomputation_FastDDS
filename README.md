@@ -1,6 +1,6 @@
 # 🔒 Precomputation_FastDDS
 
-**Precomputation_FastDDS** integrates a pre-computation–enabled OpenSSL ([link](<url>)) into **Fast-DDS**,  
+**Precomputation_FastDDS** integrates a pre-computation–enabled OpenSSL ([link](<[url](https://github.com/skqhfla/FastOpenSSL)>)) into **Fast-DDS**,  
 allowing AES-GCM encryption/decryption with pre-generated keystreams for enhanced communication performance.
 
 ---
