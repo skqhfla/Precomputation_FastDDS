@@ -61,12 +61,8 @@ public:
             data.insert(0, timestamp);
        
             msg_->data = data;
-                RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", msg_->data.c_str());
-                
-                    std::cout << "[Talker] send time " << count_ << " message : "<< std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S")
-                              << '.' << std::setfill('0') << std::setw(9) << ms.count()
-                              << std::endl;
-                pub_->publish(std::move(msg_));
+            RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", msg_->data.c_str());
+            pub_->publish(std::move(msg_));
       };
     rclcpp::QoS qos(rclcpp::KeepLast{7});
     pub_ = this->create_publisher<std_msgs::msg::String>("chatter", qos);
