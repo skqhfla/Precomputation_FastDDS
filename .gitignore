@@ -1,0 +1,4 @@
+eProsima/Fast-DDS/src/cpp/security/cryptography/AESGCMGMAC.*
+eProsima/Fast-DDS/src/cpp/security/cryptography/AESGCMGMAC_Key*
+eProsima/Fast-DDS/src/cpp/security/cryptography/AESGCMGMAC_Transform.*
+eProsima/Fast-DDS/src/cpp/security/cryptography/AESGCMGMAC_Types.cpp
