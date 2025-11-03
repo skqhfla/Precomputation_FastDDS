@@ -156,7 +156,7 @@ void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_Writ
     memcpy(iv.data(), &sid, sizeof(sid));
     memset(iv.data() + 4, 0, 8);
 
-    if(!jinho_EVP_EncryptInit_ex(handle.e_ctx, EVP_aes_256_gcm(), NULL, session.SessionKey.data(), iv.data()))
+    if(!EVP_EncryptInit_fast(handle.e_ctx, EVP_aes_256_gcm(), NULL, session.SessionKey.data(), iv.data()))
     {
         fprintf(stderr, "Failed to init AES-GCM with IV\n");
         exit(EXIT_FAILURE);
@@ -193,7 +193,7 @@ void AESGCMGMACFAST_Transform::set_for_writer_precomputation(AESGCMGMACFAST_Writ
     memcpy(iv.data(), &sessionId, sizeof(sessionId));
     memset(iv.data() + 4, 0, 8);
 
-    if(!jinho_EVP_DecryptInit_ex(handle.d_ctx, EVP_aes_256_gcm(), NULL, sessionKey.data(), iv.data()))
+    if(!EVP_DecryptInit_fast(handle.d_ctx, EVP_aes_256_gcm(), NULL, sessionKey.data(), iv.data()))
     {
         fprintf(stderr, "Failed to init AES-GCM with IV\n");
         exit(EXIT_FAILURE);
